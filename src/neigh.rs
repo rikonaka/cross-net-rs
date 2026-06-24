@@ -8,20 +8,62 @@ use std::str::FromStr;
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
 
-pub(crate) enum MacState {
-    REACHABLE,
-    STALE,
-    DELAY,
-    PROBE,
-    INCOMPLETE,
-    FAILED,
-}
-
-pub(crate) struct MacInfo {
+pub struct MacInfo {
     mac: MacAddr,
     /// The interface name associated with the MAC address, if available.
+    /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
     iface: Option<String>,
-    state: MacState,
+}
+
+impl MacInfo {
+    /// On Unix-like systems, we can get the interface name directly from the neighbor cache.
+    #[cfg(target_family = "unix")]
+    pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
+        Ok(self.iface.clone())
+    }
+    /// On Windows, we convert the interface index to a interface name.
+    #[cfg(target_family = "windows")]
+    pub fn interface_index(&self) -> Result<Option<String>, CrossNetError> {
+        // ifIndex InterfaceAlias                  AddressFamily NlMtu(Bytes) InterfaceMetric Dhcp     ConnectionState PolicyStore
+        // ------- --------------                  ------------- ------------ --------------- ----     --------------- -----------
+        // 18      VMware Network Adapter VMnet8   IPv6                  1500              35 Enabled  Connected       ActiveStore
+        // 21      VMware Network Adapter VMnet1   IPv6                  1500              35 Enabled  Connected       ActiveStore
+        // 8       蓝牙网络连接                    IPv6                  1500              65 Disabled Disconnected    ActiveStore
+        // 15      本地连接* 10                    IPv6                  1500              25 Disabled Disconnected    ActiveStore
+        // 14      本地连接* 1                     IPv6                  1500              25 Disabled Disconnected    ActiveStore
+        // 17      WLAN                            IPv6                  1500              35 Enabled  Disconnected    ActiveStore
+        // 19      以太网                          IPv6                  1500              35 Enabled  Connected       ActiveStore
+        // 1       Loopback Pseudo-Interface 1     IPv6            4294967295              75 Disabled Connected       ActiveStore
+        // 18      VMware Network Adapter VMnet8   IPv4                  1500              35 Disabled Connected       ActiveStore
+        // 21      VMware Network Adapter VMnet1   IPv4                  1500              35 Disabled Connected       ActiveStore
+        // 8       蓝牙网络连接                    IPv4                  1500              65 Enabled  Disconnected    ActiveStore
+        // 15      本地连接* 10                    IPv4                  1500              25 Disabled Disconnected    ActiveStore
+        // 14      本地连接* 1                     IPv4                  1500              25 Enabled  Disconnected    ActiveStore
+        // 17      WLAN                            IPv4                  1500              35 Enabled  Disconnected    ActiveStore
+        // 19      以太网                          IPv4                  1500              35 Disabled Connected       ActiveStore
+        // 1       Loopback Pseudo-Interface 1     IPv4            4294967295              75 Disabled Connected       ActiveStore
+
+        let output = Command::new("powershell.exe")
+            .arg("Get-NetIPInterface")
+            .output()?;
+        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+
+        let re = Regex::new(r"^(?P<ind>\d+)\s+(?P<name>([\w\d]+\s)+)\s+(IPv4|IPv6).+")?;
+
+        for line in output_str.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            if line.contains("InterfaceIndex") && line.contains(":") {
+                let index_split: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
+                if index_split.len() == 2 {
+                    let index = index_split[1].to_string();
+                    return Ok(Some(index));
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +128,7 @@ impl SystemNeighborInner {
         */
 
         let normal_re = Regex::new(
-            r"^(?P<ind>\d+)\s+(?P<ip>[0-9a-fA-F:.]+)\s+((?P<mac>[0-9a-fA-F-]+)\s+)?(?P<state>\w+).+",
+            r"^(?P<dev>\d+)\s+(?P<ip>[0-9a-fA-F:.]+)\s+((?P<mac>[0-9a-fA-F-]+)\s+)?(?P<state>\w+).+",
         )?;
 
         let output = Command::new("powershell.exe")
@@ -135,7 +177,7 @@ impl SystemNeighborInner {
         let ipv4_output = String::from_utf8_lossy(&output.stdout).to_string();
         // ignore incomplete entries
         let arp_re = Regex::new(
-            r"^\?\s+\((?P<ip>[0-9.]+)\)\s+at\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<type>\w+)\))\s+on\s+(?P<dev>\S+)\s+\w+\s+(?P<state>\S+).+",
+            r"^\?\s+\((?P<ip>[0-9.]+)\)\s+at\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<state>\w+)\))\s+on\s+(?P<dev>\S+).+",
         )?;
 
         // Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
@@ -162,7 +204,7 @@ impl SystemNeighborInner {
         let output = Command::new("ndp").arg("-an").output()?;
         let ipv6_output = String::from_utf8_lossy(&output.stdout).to_string();
         let ndp_re = Regex::new(
-            r"^(?P<ip>[0-9a-fA-F:]+)(%(?P<dev>[\w\d]+))?\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<type>\w+)\))\s+(?P<dev2>[\w\d]+)\s+(?P<state>\w+).+",
+            r"^(?P<ip>[0-9a-fA-F:]+)(%[\w\d]+)?\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<type>\w+)\))\s+(?P<dev>[\w\d]+)\s+(?P<state>\w+).+",
         )?;
 
         let sni = SystemNeighborInner {
@@ -190,83 +232,70 @@ impl fmt::Display for NeighborCache {
     }
 }
 
-pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacAddr>, CrossNetError> {
-    let mut neighbor_cache = HashMap::new();
+pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
     let sni = SystemNeighborInner::get()?;
+    let mut rets = HashMap::new();
 
+    let mut hm = HashMap::new();
+    hm.insert(sni.ipv4_output, sni.re4);
+    hm.insert(sni.ipv6_output, sni.re6);
     // parse ipv4 neighbor cache
-    for line in sni.ipv4_output.lines() {
-        if let Some(caps) = sni.re4.captures(line) {
-            if let Some(ip_str) = caps.name("ip") {
-                let ip_str = ip_str.as_str();
-                let ip = match IpAddr::from_str(ip_str) {
-                    Ok(ip) => ip,
-                    Err(e) => {
-                        eprintln!(
-                            "failed to parse ip address: [{}], line: [{}] error: {}",
-                            ip_str, line, e
-                        );
-                        panic!("XXX");
-                        // continue;
-                    }
+
+    for (output, re) in hm {
+        for line in output.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            // ip, mac, dev, state
+            if let Some(caps) = re.captures(line) {
+                let state = match caps.name("state") {
+                    Some(state) => Some(state.as_str().to_lowercase().to_string()),
+                    None => None,
                 };
-                if let Some(mac_str) = caps.name("mac") {
-                    let mac_str = &mac_str.as_str().replace("-", ":");
-                    match MacAddr::from_str(mac_str) {
-                        Ok(m) => {
-                            neighbor_cache.insert(ip, m);
-                        }
-                        Err(_e) => {
-                            return Err(CrossNetError::ParseMacAddrErr {
-                                mac: mac_str.to_string(),
-                            });
-                        }
+                // check state first
+                if let Some(state) = state {
+                    // macos, linux is incomplete, windows is unreachable
+                    if state == "incomplete" || state == "unreachable" {
+                        continue;
                     }
                 }
+
+                let ip = match caps.name("ip") {
+                    Some(ip_str) => {
+                        let ip_str = ip_str.as_str();
+                        let ip = IpAddr::from_str(ip_str)?;
+                        Some(ip)
+                    }
+                    None => None,
+                };
+
+                let mac = match caps.name("mac") {
+                    Some(mac_str) => {
+                        let mac_str = &mac_str.as_str().replace("-", ":");
+                        let m = MacAddr::from_str(mac_str)?;
+                        Some(m)
+                    }
+                    None => None,
+                };
+
+                let dev = match caps.name("dev") {
+                    Some(dev_str) => Some(dev_str.as_str().to_string()),
+                    None => None,
+                };
+
+                if let Some(ip) = ip {
+                    if let Some(mac) = mac {
+                        rets.insert(ip, MacInfo { mac, iface: dev });
+                    }
+                }
+            } else {
+                #[cfg(feature = "debug")]
+                eprintln!("line does not match arp regex:\n[{}]", line);
             }
-        } else {
-            #[cfg(feature = "debug")]
-            eprintln!("line does not match arp regex:\n[{}]", line);
         }
     }
 
-    // parse ipv6 neighbor cache
-    for line in sni.ipv6_output.lines() {
-        if let Some(caps) = sni.re6.captures(line) {
-            if let Some(ip_str) = caps.name("ip") {
-                let ip_str = ip_str.as_str();
-                let ip = match IpAddr::from_str(ip_str) {
-                    Ok(ip) => ip,
-                    Err(e) => {
-                        eprintln!(
-                            "failed to parse ip address: [{}], line: [{}] error: {}",
-                            ip_str, line, e
-                        );
-                        panic!("YYY");
-                        // continue;
-                    }
-                };
-                if let Some(mac_str) = caps.name("mac") {
-                    let mac_str = &mac_str.as_str().replace("-", ":");
-                    match MacAddr::from_str(mac_str) {
-                        Ok(m) => {
-                            neighbor_cache.insert(ip, m);
-                        }
-                        Err(_e) => {
-                            return Err(CrossNetError::ParseMacAddrErr {
-                                mac: mac_str.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        } else {
-            #[cfg(feature = "debug")]
-            eprintln!("line does not match ndp regex:\n[{}]", line);
-        }
-    }
-
-    Ok(neighbor_cache)
+    Ok(rets)
 }
 
 #[cfg(test)]
@@ -275,6 +304,13 @@ mod tests {
     #[test]
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();
-        println!("Neighbor cache: {:?}", neighbor_cache);
+        for (ip, mac_info) in &neighbor_cache {
+            println!(
+                "IP: {}, MAC: {}, Interface: {}",
+                ip,
+                mac_info.mac.to_string(),
+                mac_info.iface.as_deref().unwrap_or("N/A")
+            );
+        }
     }
 }
