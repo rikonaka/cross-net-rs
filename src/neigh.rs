@@ -8,6 +8,15 @@ use std::str::FromStr;
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
 
+#[cfg(target_os = "windows")]
+pub mod n_windows;
+#[cfg(target_os = "windows")]
+use n_windows::get_net_if;
+
+#[cfg(target_os = "linux")]
+pub mod n_linux;
+
+#[derive(Debug, Clone)]
 pub struct MacInfo {
     mac: MacAddr,
     /// The interface name associated with the MAC address, if available.
@@ -23,46 +32,16 @@ impl MacInfo {
     }
     /// On Windows, we convert the interface index to a interface name.
     #[cfg(target_family = "windows")]
-    pub fn interface_index(&self) -> Result<Option<String>, CrossNetError> {
-        // ifIndex InterfaceAlias                  AddressFamily NlMtu(Bytes) InterfaceMetric Dhcp     ConnectionState PolicyStore
-        // ------- --------------                  ------------- ------------ --------------- ----     --------------- -----------
-        // 18      VMware Network Adapter VMnet8   IPv6                  1500              35 Enabled  Connected       ActiveStore
-        // 21      VMware Network Adapter VMnet1   IPv6                  1500              35 Enabled  Connected       ActiveStore
-        // 8       蓝牙网络连接                    IPv6                  1500              65 Disabled Disconnected    ActiveStore
-        // 15      本地连接* 10                    IPv6                  1500              25 Disabled Disconnected    ActiveStore
-        // 14      本地连接* 1                     IPv6                  1500              25 Disabled Disconnected    ActiveStore
-        // 17      WLAN                            IPv6                  1500              35 Enabled  Disconnected    ActiveStore
-        // 19      以太网                          IPv6                  1500              35 Enabled  Connected       ActiveStore
-        // 1       Loopback Pseudo-Interface 1     IPv6            4294967295              75 Disabled Connected       ActiveStore
-        // 18      VMware Network Adapter VMnet8   IPv4                  1500              35 Disabled Connected       ActiveStore
-        // 21      VMware Network Adapter VMnet1   IPv4                  1500              35 Disabled Connected       ActiveStore
-        // 8       蓝牙网络连接                    IPv4                  1500              65 Enabled  Disconnected    ActiveStore
-        // 15      本地连接* 10                    IPv4                  1500              25 Disabled Disconnected    ActiveStore
-        // 14      本地连接* 1                     IPv4                  1500              25 Enabled  Disconnected    ActiveStore
-        // 17      WLAN                            IPv4                  1500              35 Enabled  Disconnected    ActiveStore
-        // 19      以太网                          IPv4                  1500              35 Disabled Connected       ActiveStore
-        // 1       Loopback Pseudo-Interface 1     IPv4            4294967295              75 Disabled Connected       ActiveStore
-
-        let output = Command::new("powershell.exe")
-            .arg("Get-NetIPInterface")
-            .output()?;
-        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
-
-        let re = Regex::new(r"^(?P<ind>\d+)\s+(?P<name>([\w\d]+\s)+)\s+(IPv4|IPv6).+")?;
-
-        for line in output_str.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            if line.contains("InterfaceIndex") && line.contains(":") {
-                let index_split: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
-                if index_split.len() == 2 {
-                    let index = index_split[1].to_string();
-                    return Ok(Some(index));
+    pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
+        let net_ifs = get_net_if()?;
+        if let Some(iface) = &self.iface {
+            for net_if in &net_ifs {
+                if iface == &net_if.index.to_string() {
+                    return Ok(Some(net_if.name.clone()));
                 }
             }
         }
+        Ok(None)
     }
 }
 
@@ -78,7 +57,7 @@ impl SystemNeighborInner {
     #[cfg(target_os = "linux")]
     fn get() -> Result<SystemNeighborInner, CrossNetError> {
         let normal_re = Regex::new(
-            r"^(?P<ip>[0-9a-fA-F:.]+)\s+(dev\s+(?P<dev>[\w\d]+)\s+)?(lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+)?(?P<state>\S+)",
+            r"^(?P<ip>[0-9a-fA-F:.]+)\s+(dev\s+(?P<dev>[\w\d]+)\s+)?(lladdr\s+(?P<mac>[0-9a-fA-F:]+)\s+)?(?P<state>\S+)$",
         )?;
 
         // 192.168.5.1 dev ens33 lladdr 00:50:56:c0:00:08 REACHABLE
@@ -128,7 +107,7 @@ impl SystemNeighborInner {
         */
 
         let normal_re = Regex::new(
-            r"^(?P<dev>\d+)\s+(?P<ip>[0-9a-fA-F:.]+)\s+((?P<mac>[0-9a-fA-F-]+)\s+)?(?P<state>\w+).+",
+            r"^(?P<dev>\d+)\s+(?P<ip>[0-9a-fA-F:.]+)\s+((?P<mac>[0-9a-fA-F-]+)\s+)?(?P<state>\w+)\s+\w+$",
         )?;
 
         let output = Command::new("powershell.exe")
@@ -177,7 +156,7 @@ impl SystemNeighborInner {
         let ipv4_output = String::from_utf8_lossy(&output.stdout).to_string();
         // ignore incomplete entries
         let arp_re = Regex::new(
-            r"^\?\s+\((?P<ip>[0-9.]+)\)\s+at\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<state>\w+)\))\s+on\s+(?P<dev>\S+).+",
+            r"^\?\s+\((?P<ip>[0-9.]+)\)\s+at\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<state>\w+)\))\s+on\s+(?P<dev>\S+)\s+\w+\s+\w+\s+\[\w+\]$",
         )?;
 
         // Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
@@ -204,7 +183,7 @@ impl SystemNeighborInner {
         let output = Command::new("ndp").arg("-an").output()?;
         let ipv6_output = String::from_utf8_lossy(&output.stdout).to_string();
         let ndp_re = Regex::new(
-            r"^(?P<ip>[0-9a-fA-F:]+)(%[\w\d]+)?\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<type>\w+)\))\s+(?P<dev>[\w\d]+)\s+(?P<state>\w+).+",
+            r"^(?P<ip>[0-9a-fA-F:]+)(%[\w\d]+)?\s+((?P<mac>[0-9a-fA-F:]+)|\((?P<type>\w+)\))\s+(?P<dev>[\w\d]+)\s+(?P<state>\w+)\s+\w+(\s+\w+)?$",
         )?;
 
         let sni = SystemNeighborInner {
@@ -246,6 +225,7 @@ pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
             if line.trim().is_empty() {
                 continue;
             }
+            let line = line.trim();
             // ip, mac, dev, state
             if let Some(caps) = re.captures(line) {
                 let state = match caps.name("state") {
@@ -279,7 +259,7 @@ pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
                 };
 
                 let dev = match caps.name("dev") {
-                    Some(dev_str) => Some(dev_str.as_str().to_string()),
+                    Some(dev_str) => Some(dev_str.as_str().trim().to_string()),
                     None => None,
                 };
 
@@ -310,6 +290,14 @@ mod tests {
                 ip,
                 mac_info.mac.to_string(),
                 mac_info.iface.as_deref().unwrap_or("N/A")
+            );
+
+            let ind = mac_info.iface.clone().unwrap_or_default();
+            let iface_name = mac_info.interface_name().unwrap();
+            println!(
+                "Interface name for ind {}: {}",
+                ind,
+                iface_name.as_deref().unwrap_or("N/A")
             );
         }
     }

@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 regex = "1.12.4"
+rtnetlink = "0.21.0"
 thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_NetworkManagement_Ndis"] }
 
 [features]
 default = ["debug"]

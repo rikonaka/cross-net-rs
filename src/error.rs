@@ -10,4 +10,7 @@ pub enum CrossNetError {
     RegexErr(#[from] regex::Error),
     #[error("failed to parse ip address: {0}")]
     AddrParseError(#[from] std::net::AddrParseError),
+    /* n_windows */
+    #[error("windows error: {0}")]
+    WindowsError(#[from] windows::core::Error),
 }
