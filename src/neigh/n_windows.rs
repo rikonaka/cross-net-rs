@@ -14,9 +14,9 @@ use crate::error::CrossNetError;
 use crate::iface::MacAddr;
 
 #[derive(Debug, Clone)]
-pub struct NetIf {
-    pub name: String,
-    pub index: u32,
+pub struct WindowsNetIf {
+    pub if_name: String,
+    pub if_index: u32,
 }
 
 /// More safe way to convert a UTF-16 array to a Rust String, handling null terminators and invalid sequences.
@@ -38,15 +38,23 @@ pub fn get_net_if() -> Result<Vec<NetIf>, CrossNetError> {
         let first_row_ptr = table.Table.as_ptr();
         let rows = std::slice::from_raw_parts(first_row_ptr, num_entries);
         for row in rows {
-            let index = row.InterfaceIndex;
-            let name = utf16_array_to_string(&row.Alias);
-            rets.push(NetIf { name, index });
+            let if_index = row.InterfaceIndex;
+            let if_name = utf16_array_to_string(&row.Alias);
+            rets.push(NetIf { if_name, if_index });
         }
 
         FreeMibTable(table_ptr as _);
     }
 
     Ok(rets)
+}
+
+#[derive(Debug, Clone)]
+pub struct WindowsNetNeigh {
+    pub if_index: u32,
+    pub ip: IpAddr,
+    pub mac: MacAddr,
+    pub state: i32,
 }
 
 fn sockaddr_inet_to_ipaddr(addr: &SOCKADDR_INET) -> Result<Option<IpAddr>, CrossNetError> {
@@ -67,13 +75,7 @@ fn sockaddr_inet_to_ipaddr(addr: &SOCKADDR_INET) -> Result<Option<IpAddr>, Cross
     }
 }
 
-pub struct NetNeigh {
-    pub index: u32,
-    pub ip: IpAddr,
-    pub mac: MacAddr,
-}
-
-pub fn get_net_neigh() -> Result<Vec<NetNeigh>, CrossNetError> {
+pub fn get_net_neighs() -> Result<Vec<NetNeigh>, CrossNetError> {
     let mut rets = Vec::new();
     unsafe {
         let mut table_ptr = std::ptr::null_mut();
@@ -93,7 +95,8 @@ pub fn get_net_neigh() -> Result<Vec<NetNeigh>, CrossNetError> {
                 continue;
             }
 
-            let index = row.InterfaceIndex;
+            let state = row.State.0;
+            let if_index = row.InterfaceIndex;
             let ip = sockaddr_inet_to_ipaddr(&row.Address)?;
             let mac_bytes = &row.PhysicalAddress[..row.PhysicalAddressLength as usize];
             let mac = if row.PhysicalAddressLength == 6 {
@@ -123,7 +126,12 @@ pub fn get_net_neigh() -> Result<Vec<NetNeigh>, CrossNetError> {
             };
 
             if let Some(ip) = ip {
-                rets.push(NetNeigh { index, ip, mac });
+                rets.push(NetNeigh {
+                    if_index,
+                    ip,
+                    mac,
+                    state,
+                });
             }
         }
 
@@ -138,7 +146,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_windows() {
-        let rets = get_net_neigh().unwrap();
+        let rets = get_net_neighs().unwrap();
         for ret in rets {
             println!(
                 "index: {}, ip: {}, mac: {}",
