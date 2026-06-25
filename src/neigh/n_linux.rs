@@ -1,5 +1,6 @@
 use futures::stream::TryStreamExt;
 use rtnetlink::new_connection;
+use rtnetlink::packet_route::link::LinkAttribute;
 use rtnetlink::packet_route::neighbour::NeighbourAddress;
 use rtnetlink::packet_route::neighbour::NeighbourAttribute;
 use rtnetlink::packet_route::neighbour::NeighbourState;
@@ -8,6 +9,48 @@ use tokio::runtime::Runtime;
 
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
+
+#[derive(Debug, Clone)]
+pub struct LinuxNetIf {
+    pub if_name: String,
+    pub if_index: u32,
+}
+
+impl PartialEq for LinuxNetIf {
+    fn eq(&self, other: &Self) -> bool {
+        self.if_index == other.if_index
+    }
+}
+
+async fn get_ifs_async() -> Result<Vec<LinuxNetIf>, CrossNetError> {
+    let (connection, handle, _r) = new_connection()?;
+    tokio::spawn(connection);
+
+    let mut links = handle.link().get().execute();
+    let mut rets = Vec::new();
+
+    while let Some(msg) = links.try_next().await? {
+        for la in msg.attributes {
+            let if_index = msg.header.index;
+            match la {
+                LinkAttribute::IfName(if_name) => {
+                    let n = LinuxNetIf { if_name, if_index };
+                    if !rets.contains(&n) {
+                        rets.push(n);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(rets)
+}
+
+pub fn get_net_ifs() -> Result<Vec<LinuxNetIf>, CrossNetError> {
+    let rt = Runtime::new()?;
+    rt.block_on(async { get_ifs_async().await })
+}
 
 #[derive(Debug, Clone)]
 pub struct LinuxNetNeigh {
@@ -24,7 +67,7 @@ impl PartialEq for LinuxNetNeigh {
     }
 }
 
-async fn get_neigh_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
+async fn get_neighs_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
     let (connection, handle, _r) = new_connection()?;
     tokio::spawn(connection);
 
@@ -81,6 +124,7 @@ async fn get_neigh_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
                     };
                     mac = Some(m);
                 }
+
                 _ => {}
             }
 
@@ -105,7 +149,7 @@ async fn get_neigh_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
 
 pub fn get_net_neighs() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
     let rt = Runtime::new()?;
-    rt.block_on(async { get_neigh_async().await })
+    rt.block_on(async { get_neighs_async().await })
 }
 
 #[cfg(target_os = "linux")]

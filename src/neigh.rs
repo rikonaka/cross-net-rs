@@ -15,29 +15,29 @@ use n_windows::get_net_neighs;
 #[cfg(target_os = "linux")]
 pub mod n_linux;
 #[cfg(target_os = "linux")]
+use n_linux::get_net_ifs;
+#[cfg(target_os = "linux")]
 use n_linux::get_net_neighs;
+
+#[cfg(target_os = "macos")]
+pub mod n_macos;
 
 #[derive(Debug, Clone)]
 pub struct MacInfo {
     mac: MacAddr,
     /// The interface name associated with the MAC address, if available.
     /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
-    iface: Option<String>,
+    index: Option<u32>,
 }
 
 impl MacInfo {
     /// On Unix-like systems, we can get the interface name directly from the neighbor cache.
-    #[cfg(target_family = "unix")]
-    pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
-        Ok(self.iface.clone())
-    }
-    /// On Windows, we convert the interface index to a interface name.
-    #[cfg(target_family = "windows")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
         let net_ifs = get_net_ifs()?;
-        if let Some(iface) = &self.iface {
+        if let Some(iface) = &self.index {
             for net_if in &net_ifs {
-                if iface == &net_if.if_index.to_string() {
+                if iface == &net_if.if_index {
                     return Ok(Some(net_if.if_name.clone()));
                 }
             }
@@ -51,8 +51,8 @@ pub struct NeighborCache(HashMap<IpAddr, MacInfo>);
 impl fmt::Display for NeighborCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (ip, mac_info) in &self.0 {
-            let iface_str = match &mac_info.iface {
-                Some(iface) => iface.clone(),
+            let iface_str = match &mac_info.index {
+                Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
             write!(f, "{}:{}({})", ip, mac_info.mac.to_string(), iface_str,)?;
@@ -69,7 +69,7 @@ pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
     for n in net_neighs {
         let mac_info = MacInfo {
             mac: n.mac,
-            iface: Some(n.if_index.to_string()),
+            index: Some(n.if_index),
         };
         rets.insert(n.ip, mac_info);
         hm.insert(n.if_index, n.ip);
@@ -89,10 +89,14 @@ mod tests {
                 "IP: {}, MAC: {}, Interface: {}",
                 ip,
                 mac_info.mac.to_string(),
-                mac_info.iface.as_deref().unwrap_or("N/A")
+                mac_info
+                    .index
+                    .map(|i| i.to_string())
+                    .as_deref()
+                    .unwrap_or("N/A")
             );
 
-            let ind = mac_info.iface.clone().unwrap_or_default();
+            let ind = mac_info.index.clone().unwrap_or_default();
             let iface_name = mac_info.interface_name().unwrap();
             println!(
                 "Interface name for ind {}: {}",
