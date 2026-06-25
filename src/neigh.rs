@@ -8,7 +8,9 @@ use crate::iface::MacAddr;
 #[cfg(target_os = "windows")]
 pub mod n_windows;
 #[cfg(target_os = "windows")]
-use n_windows::get_net_if;
+use n_windows::get_net_ifs;
+#[cfg(target_os = "windows")]
+use n_windows::get_net_neighs;
 
 #[cfg(target_os = "linux")]
 pub mod n_linux;
@@ -32,7 +34,7 @@ impl MacInfo {
     /// On Windows, we convert the interface index to a interface name.
     #[cfg(target_family = "windows")]
     pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
-        let net_ifs = get_net_if()?;
+        let net_ifs = get_net_ifs()?;
         if let Some(iface) = &self.iface {
             for net_if in &net_ifs {
                 if iface == &net_if.if_index.to_string() {

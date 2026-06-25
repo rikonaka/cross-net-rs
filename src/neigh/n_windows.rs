@@ -19,6 +19,12 @@ pub struct WindowsNetIf {
     pub if_index: u32,
 }
 
+impl PartialEq for WindowsNetIf {
+    fn eq(&self, other: &Self) -> bool {
+        self.if_index == other.if_index
+    }
+}
+
 /// More safe way to convert a UTF-16 array to a Rust String, handling null terminators and invalid sequences.
 fn utf16_array_to_string(buf: &[u16]) -> String {
     // found the first null terminator in the buffer, or use the full length if none is found
@@ -26,7 +32,7 @@ fn utf16_array_to_string(buf: &[u16]) -> String {
     String::from_utf16_lossy(&buf[..len])
 }
 
-pub fn get_net_if() -> Result<Vec<NetIf>, CrossNetError> {
+pub fn get_net_ifs() -> Result<Vec<WindowsNetIf>, CrossNetError> {
     let mut rets = Vec::new();
 
     unsafe {
@@ -40,7 +46,10 @@ pub fn get_net_if() -> Result<Vec<NetIf>, CrossNetError> {
         for row in rows {
             let if_index = row.InterfaceIndex;
             let if_name = utf16_array_to_string(&row.Alias);
-            rets.push(NetIf { if_name, if_index });
+            let n = WindowsNetIf { if_name, if_index };
+            if !rets.contains(&n) {
+                rets.push(n);
+            }
         }
 
         FreeMibTable(table_ptr as _);
@@ -55,6 +64,12 @@ pub struct WindowsNetNeigh {
     pub ip: IpAddr,
     pub mac: MacAddr,
     pub state: i32,
+}
+
+impl PartialEq for WindowsNetNeigh {
+    fn eq(&self, other: &Self) -> bool {
+        self.ip == other.ip
+    }
 }
 
 fn sockaddr_inet_to_ipaddr(addr: &SOCKADDR_INET) -> Result<Option<IpAddr>, CrossNetError> {
@@ -75,7 +90,7 @@ fn sockaddr_inet_to_ipaddr(addr: &SOCKADDR_INET) -> Result<Option<IpAddr>, Cross
     }
 }
 
-pub fn get_net_neighs() -> Result<Vec<NetNeigh>, CrossNetError> {
+pub fn get_net_neighs() -> Result<Vec<WindowsNetNeigh>, CrossNetError> {
     let mut rets = Vec::new();
     unsafe {
         let mut table_ptr = std::ptr::null_mut();
@@ -126,12 +141,15 @@ pub fn get_net_neighs() -> Result<Vec<NetNeigh>, CrossNetError> {
             };
 
             if let Some(ip) = ip {
-                rets.push(NetNeigh {
+                let n = WindowsNetNeigh {
                     if_index,
                     ip,
                     mac,
                     state,
-                });
+                };
+                if !rets.contains(&n) {
+                    rets.push(n);
+                }
             }
         }
 
@@ -150,7 +168,7 @@ mod tests {
         for ret in rets {
             println!(
                 "index: {}, ip: {}, mac: {}",
-                ret.index,
+                ret.if_index,
                 ret.ip.to_string(),
                 ret.mac.to_string()
             );
