@@ -32,6 +32,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "rtnetlink",
+ "subnetwork",
  "thiserror 2.0.18",
  "tokio",
  "windows",
@@ -276,6 +277,15 @@ checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
  "windows-sys",
+]
+
+[[package]]
+name = "subnetwork"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51f378d446fc39ca840612675450e02497eb12b62322822793a9cb369712a213"
+dependencies = [
+ "thiserror 2.0.18",
 ]
 
 [[package]]

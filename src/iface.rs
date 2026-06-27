@@ -3,6 +3,12 @@ use std::fmt;
 use crate::error::CrossNetError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NetFamily {
+    Ipv4,
+    Ipv6,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct Eui48([u8; 6]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
