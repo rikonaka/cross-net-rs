@@ -21,6 +21,10 @@ use n_linux::get_net_neighs;
 
 #[cfg(target_os = "macos")]
 pub mod n_macos;
+#[cfg(target_os = "macos")]
+use n_macos::get_net_ifs;
+#[cfg(target_os = "macos")]
+use n_macos::get_net_neighs;
 
 #[derive(Debug, Clone)]
 pub struct NetIf {

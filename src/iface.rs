@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str;
 
 use crate::error::CrossNetError;
 
@@ -22,6 +23,15 @@ enum MacAddrInner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MacAddr(MacAddrInner);
+
+impl str::FromStr for MacAddr {
+    type Err = CrossNetError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mac = MacAddr::from_str(s)?;
+        Ok(mac)
+    }
+}
 
 impl fmt::Display for MacAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

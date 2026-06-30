@@ -1,7 +1,5 @@
 use regex::Regex;
 use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
 use std::process::Command;
 
 use crate::error::CrossNetError;
@@ -10,18 +8,17 @@ use crate::neigh::NetIf;
 
 #[derive(Debug, Clone)]
 struct UnixNetNeigh {
-    pub ifx: String,
+    pub if_name: String,
     pub ip: IpAddr,
     pub mac: MacAddr,
-    pub state: String,
 }
 
-fn get() -> Result<UnixNetNeigh, CrossNetError> {
+fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     let ipv4_output = Command::new("arp").arg("-an").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     // ignore incomplete entries
     let arp_re = Regex::new(
-        r"^\?\s+\((?P<ip>\d{1,3}\.\d{1,3}.\d{1,3}.\d{1,3})\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+\S+\s+\S+\s+\S+\s+\[\S+\]",
+        r"^\?\s+\((?P<ip>[\w\d.]+)\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+(?P<dev>\S+)\s+\S+\s+\S+\s+\[\S+\]",
     )?;
     // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
     // ? (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
@@ -40,6 +37,37 @@ fn get() -> Result<UnixNetNeigh, CrossNetError> {
     // ? (192.168.62.255) at ff:ff:ff:ff:ff:ff on bridge100 ifscope [bridge]
     // ? (224.0.0.251) at 1:0:5e:0:0:fb on en0 ifscope permanent [ethernet]
     // ? (232.215.218.197) at 1:0:5e:57:da:c5 on en0 ifscope permanent [ethernet]
+
+    let mut rets = Vec::new();
+    for line in ipv4_output_str.lines() {
+        if let Some(caps) = arp_re.captures(line) {
+            let ip = match caps.name("ip") {
+                Some(ip_str) => {
+                    let ip_str = ip_str.as_str();
+                    let ip: IpAddr = ip_str.parse()?;
+                    Some(ip)
+                }
+                None => None,
+            };
+            let mac = match caps.name("mac") {
+                Some(mac_str) => {
+                    let mac_str = mac_str.as_str();
+                    let mac: MacAddr = mac_str.parse()?;
+                    Some(mac)
+                }
+                None => None,
+            };
+            let if_name = match caps.name("dev") {
+                Some(dev_str) => dev_str.as_str().to_string(),
+                None => String::new(),
+            };
+
+            if let (Some(ip), Some(mac)) = (ip, mac) {
+                let unn = UnixNetNeigh { if_name, ip, mac };
+                rets.push(unn);
+            }
+        }
+    }
 
     let ipv6_output = Command::new("ndp").arg("-an").output()?;
     let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
@@ -68,11 +96,35 @@ fn get() -> Result<UnixNetNeigh, CrossNetError> {
     // fe80::c0c7:dbff:fe1d:3965%bridge101     c2:c7:db:1d:39:65 bridge101 permanent R
     // fe80::c0c7:dbff:fe1d:3966%bridge102     c2:c7:db:1d:39:66 bridge102 permanent R
 
-    let sn = SystemNeighborInner {
-        ipv4: ipv4_output_str.to_string(),
-        re4: arp_re,
-        ipv6: ipv6_output_str.to_string(),
-        re6: ndp_re,
-    };
-    Ok(sn)
+    for line in ipv6_output_str.lines() {
+        if let Some(caps) = ndp_re.captures(line) {
+            let ip = match caps.name("ip") {
+                Some(ip_str) => {
+                    let ip_str = ip_str.as_str();
+                    let ip: IpAddr = ip_str.parse()?;
+                    Some(ip)
+                }
+                None => None,
+            };
+            let mac = match caps.name("mac") {
+                Some(mac_str) => {
+                    let mac_str = mac_str.as_str();
+                    let mac: MacAddr = mac_str.parse()?;
+                    Some(mac)
+                }
+                None => None,
+            };
+            let if_name = match caps.name("dev") {
+                Some(dev_str) => dev_str.as_str().to_string(),
+                None => String::new(),
+            };
+
+            if let (Some(ip), Some(mac)) = (ip, mac) {
+                let unn = UnixNetNeigh { if_name, ip, mac };
+                rets.push(unn);
+            }
+        }
+    }
+
+    Ok(rets)
 }

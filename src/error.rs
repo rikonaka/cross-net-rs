@@ -8,6 +8,8 @@ pub enum CrossNetError {
     ParseMacAddrErr { mac: String },
     #[error("failed to parse ip address: {0}")]
     AddrParseError(#[from] std::net::AddrParseError),
+    #[error("regex error: {0}")]
+    RegexError(#[from] regex::Error),
     /* n_windows */
     #[cfg(target_os = "windows")]
     #[error("windows core error: {0}")]
