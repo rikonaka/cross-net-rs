@@ -9,56 +9,16 @@ use std::net::IpAddr;
 use subnetwork::IpPool;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
+
 use tokio::runtime::Runtime;
 
 use crate::error::CrossNetError;
-use crate::iface::MacAddr;
 use crate::iface::NetFamily;
+use crate::route::NetRoute;
+use crate::route::NetRouteAddr;
+use crate::route::NetType;
 
-#[derive(Debug, Clone)]
-pub enum NetRouteAddr {
-    IpPool(IpPool),
-    IpAddr(IpAddr),
-}
-
-impl PartialEq for NetRouteAddr {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (NetRouteAddr::IpPool(p1), NetRouteAddr::IpPool(p2)) => p1 == p2,
-            (NetRouteAddr::IpAddr(a1), NetRouteAddr::IpAddr(a2)) => a1 == a2,
-            _ => false,
-        }
-    }
-}
-
-/// Indicates the type of network route,
-/// default route or normal route.
-/// Default route is the route that has no destination address,
-/// and it is used when there is no other route that matches the destination address of a packet.
-/// Normal route is the route that has a specific destination address,
-/// and it is used when there is a matching route for the destination address of a packet.
-#[derive(Debug, Clone)]
-pub enum NetType {
-    Normal,
-    Default,
-}
-
-#[derive(Debug, Clone)]
-pub struct LinuxNetRoute {
-    pub dst: Option<NetRouteAddr>,
-    pub src: Option<NetRouteAddr>,
-    pub gateway: Option<NetRouteAddr>,
-    pub ntype: NetType,
-    pub family: NetFamily,
-}
-
-impl PartialEq for LinuxNetRoute {
-    fn eq(&self, other: &Self) -> bool {
-        self.dst == other.dst
-    }
-}
-
-async fn get_route_async() -> Result<Vec<LinuxNetRoute>, CrossNetError> {
+async fn get_route_async() -> Result<Vec<NetRoute>, CrossNetError> {
     let (connection, handle, _r) = new_connection()?;
     tokio::spawn(connection);
 
@@ -171,19 +131,22 @@ async fn get_route_async() -> Result<Vec<LinuxNetRoute>, CrossNetError> {
         let src = convert_addr(src_addr, src_prefix)?;
         let gateway = convert_addr(gateway_addr, 0)?;
 
-        rets.push(LinuxNetRoute {
+        let lnr = NetRoute {
             dst,
             src,
             gateway,
             ntype,
             family,
-        });
+        };
+        if !rets.contains(&lnr) {
+            rets.push(lnr);
+        }
     }
 
     Ok(rets)
 }
 
-pub fn get_net_routes() -> Result<Vec<LinuxNetRoute>, CrossNetError> {
+pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let rt = Runtime::new()?;
     rt.block_on(async { get_route_async().await })
 }
@@ -197,10 +160,17 @@ mod tests {
         let rets = get_net_routes().unwrap();
         println!("len: {:?}", rets.len());
         for ret in rets {
-            println!(
-                "dst: {:?}, src: {:?}, gateway: {:?}, type: {:?}",
-                ret.dst, ret.src, ret.gateway, ret.ntype
-            );
+            if let Some(dst) = &ret.dst {
+                println!("dst: {}", dst);
+            }
+            if let Some(src) = &ret.src {
+                println!("src: {}", src);
+            }
+            if let Some(gateway) = &ret.gateway {
+                println!("gateway: {}", gateway);
+            }
+            println!("ntype: {:?}", ret.ntype);
+            println!("=================================");
         }
     }
 }

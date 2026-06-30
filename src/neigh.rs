@@ -61,7 +61,13 @@ impl fmt::Display for NeighborCache {
     }
 }
 
-pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
+impl NeighborCache {
+    pub fn search_mac(&self, ip: &IpAddr) -> Option<MacAddr> {
+        self.0.get(ip).map(|mac_info| mac_info.mac)
+    }
+}
+
+pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
     let net_neighs = get_net_neighs()?;
     let mut rets = HashMap::new();
     let mut hm = HashMap::new();
@@ -75,7 +81,8 @@ pub fn get_neighbor_cache() -> Result<HashMap<IpAddr, MacInfo>, CrossNetError> {
         hm.insert(n.if_index, n.ip);
     }
 
-    Ok(rets)
+    let neighbor_cache = NeighborCache(rets);
+    Ok(neighbor_cache)
 }
 
 #[cfg(test)]
@@ -84,7 +91,7 @@ mod tests {
     #[test]
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();
-        for (ip, mac_info) in &neighbor_cache {
+        for (ip, mac_info) in &neighbor_cache.0 {
             println!(
                 "IP: {}, MAC: {}, Interface: {}",
                 ip,

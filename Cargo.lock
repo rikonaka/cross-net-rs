@@ -281,9 +281,9 @@ dependencies = [
 
 [[package]]
 name = "subnetwork"
-version = "0.6.7"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51f378d446fc39ca840612675450e02497eb12b62322822793a9cb369712a213"
+checksum = "7ef8de906f6e03753cf2dbd24593e2073797b9f93692c363b8eb0ee27279ec58"
 dependencies = [
  "thiserror 2.0.18",
 ]
