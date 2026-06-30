@@ -12,18 +12,7 @@ use std::net::Ipv6Addr;
 
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
-
-#[derive(Debug, Clone)]
-pub struct WindowsNetIf {
-    pub if_name: String,
-    pub if_index: u32,
-}
-
-impl PartialEq for WindowsNetIf {
-    fn eq(&self, other: &Self) -> bool {
-        self.if_index == other.if_index
-    }
-}
+use crate::neigh::NetIf;
 
 /// More safe way to convert a UTF-16 array to a Rust String, handling null terminators and invalid sequences.
 fn utf16_array_to_string(buf: &[u16]) -> String {
@@ -32,7 +21,7 @@ fn utf16_array_to_string(buf: &[u16]) -> String {
     String::from_utf16_lossy(&buf[..len])
 }
 
-pub fn get_net_ifs() -> Result<Vec<WindowsNetIf>, CrossNetError> {
+pub fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
     let mut rets = Vec::new();
 
     unsafe {
@@ -46,7 +35,7 @@ pub fn get_net_ifs() -> Result<Vec<WindowsNetIf>, CrossNetError> {
         for row in rows {
             let if_index = row.InterfaceIndex;
             let if_name = utf16_array_to_string(&row.Alias);
-            let n = WindowsNetIf { if_name, if_index };
+            let n = NetIf { if_name, if_index };
             if !rets.contains(&n) {
                 rets.push(n);
             }

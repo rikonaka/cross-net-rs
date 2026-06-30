@@ -131,15 +131,15 @@ async fn get_route_async() -> Result<Vec<NetRoute>, CrossNetError> {
         let src = convert_addr(src_addr, src_prefix)?;
         let gateway = convert_addr(gateway_addr, 0)?;
 
-        let lnr = NetRoute {
+        let nr = NetRoute {
             dst,
             src,
             gateway,
             ntype,
             family,
         };
-        if !rets.contains(&lnr) {
-            rets.push(lnr);
+        if !rets.contains(&nr) {
+            rets.push(nr);
         }
     }
 

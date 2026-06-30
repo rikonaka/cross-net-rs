@@ -16,8 +16,7 @@ pub enum CrossNetError {
     #[cfg(target_os = "linux")]
     #[error("linux rtnetlink error: {0}")]
     LinuxError(#[from] rtnetlink::Error),
-    /* r_linux */
-    #[cfg(target_os = "linux")]
+    /* r_linux and r_windows */
     #[error("linux ip pool error: {0}")]
     IpPoolError(#[from] subnetwork::SubnetworkError),
 }

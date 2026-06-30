@@ -23,6 +23,18 @@ use n_linux::get_net_neighs;
 pub mod n_macos;
 
 #[derive(Debug, Clone)]
+pub struct NetIf {
+    pub if_name: String,
+    pub if_index: u32,
+}
+
+impl PartialEq for NetIf {
+    fn eq(&self, other: &Self) -> bool {
+        self.if_index == other.if_index
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct MacInfo {
     mac: MacAddr,
     /// The interface name associated with the MAC address, if available.

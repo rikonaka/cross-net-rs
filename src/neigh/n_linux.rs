@@ -9,20 +9,9 @@ use tokio::runtime::Runtime;
 
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
+use crate::neigh::NetIf;
 
-#[derive(Debug, Clone)]
-pub struct LinuxNetIf {
-    pub if_name: String,
-    pub if_index: u32,
-}
-
-impl PartialEq for LinuxNetIf {
-    fn eq(&self, other: &Self) -> bool {
-        self.if_index == other.if_index
-    }
-}
-
-async fn get_ifs_async() -> Result<Vec<LinuxNetIf>, CrossNetError> {
+async fn get_ifs_async() -> Result<Vec<NetIf>, CrossNetError> {
     let (connection, handle, _r) = new_connection()?;
     tokio::spawn(connection);
 
@@ -34,7 +23,7 @@ async fn get_ifs_async() -> Result<Vec<LinuxNetIf>, CrossNetError> {
             let if_index = msg.header.index;
             match la {
                 LinkAttribute::IfName(if_name) => {
-                    let n = LinuxNetIf { if_name, if_index };
+                    let n = NetIf { if_name, if_index };
                     if !rets.contains(&n) {
                         rets.push(n);
                     }
@@ -47,7 +36,7 @@ async fn get_ifs_async() -> Result<Vec<LinuxNetIf>, CrossNetError> {
     Ok(rets)
 }
 
-pub fn get_net_ifs() -> Result<Vec<LinuxNetIf>, CrossNetError> {
+pub fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
     let rt = Runtime::new()?;
     rt.block_on(async { get_ifs_async().await })
 }
