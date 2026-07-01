@@ -32,13 +32,6 @@ pub mod n_unix;
     target_os = "openbsd",
     target_os = "netbsd"
 ))]
-use n_unix::get_net_ifs;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
 use n_unix::get_net_neighs;
 
 #[derive(Debug, Clone)]
@@ -58,7 +51,10 @@ pub struct MacInfo {
     mac: MacAddr,
     /// The interface name associated with the MAC address, if available.
     /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
-    index: Option<u32>,
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    if_index: Option<u32>,
+    #[cfg(target_os = "macos")]
+    if_name: Option<String>,
 }
 
 impl MacInfo {
@@ -66,7 +62,7 @@ impl MacInfo {
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
         let net_ifs = get_net_ifs()?;
-        if let Some(iface) = &self.index {
+        if let Some(iface) = &self.if_index {
             for net_if in &net_ifs {
                 if iface == &net_if.if_index {
                     return Ok(Some(net_if.if_name.clone()));
@@ -82,8 +78,14 @@ pub struct NeighborCache(HashMap<IpAddr, MacInfo>);
 impl fmt::Display for NeighborCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (ip, mac_info) in &self.0 {
-            let iface_str = match &mac_info.index {
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            let iface_str = match &mac_info.if_index {
                 Some(iface) => iface.to_string(),
+                None => "N/A".to_string(),
+            };
+            #[cfg(target_os = "macos")]
+            let iface_str = match &mac_info.if_name {
+                Some(iface) => iface.clone(),
                 None => "N/A".to_string(),
             };
             write!(f, "{}:{}({})", ip, mac_info.mac.to_string(), iface_str,)?;
@@ -101,15 +103,16 @@ impl NeighborCache {
 pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
     let net_neighs = get_net_neighs()?;
     let mut rets = HashMap::new();
-    let mut hm = HashMap::new();
 
     for n in net_neighs {
         let mac_info = MacInfo {
             mac: n.mac,
-            index: Some(n.if_index),
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            if_index: Some(n.if_index),
+            #[cfg(target_os = "macos")]
+            if_name: Some(n.if_name),
         };
         rets.insert(n.ip, mac_info);
-        hm.insert(n.if_index, n.ip);
     }
 
     let neighbor_cache = NeighborCache(rets);
@@ -123,24 +126,28 @@ mod tests {
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();
         for (ip, mac_info) in &neighbor_cache.0 {
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            let interface = match &mac_info.if_index {
+                Some(iface) => iface.to_string(),
+                None => "N/A".to_string(),
+            };
+            #[cfg(target_os = "macos")]
+            let interface = match &mac_info.if_name {
+                Some(iface) => iface.clone(),
+                None => "N/A".to_string(),
+            };
             println!(
                 "IP: {}, MAC: {}, Interface: {}",
                 ip,
                 mac_info.mac.to_string(),
-                mac_info
-                    .index
-                    .map(|i| i.to_string())
-                    .as_deref()
-                    .unwrap_or("N/A")
+                interface
             );
 
-            let ind = mac_info.index.clone().unwrap_or_default();
-            let iface_name = mac_info.interface_name().unwrap();
-            println!(
-                "Interface name for ind {}: {}",
-                ind,
-                iface_name.as_deref().unwrap_or("N/A")
-            );
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            let ind = mac_info.if_index.clone().unwrap_or_default();
+            #[cfg(target_os = "macos")]
+            let ind = mac_info.if_name.clone().unwrap_or_default();
+            println!("Interface name for ind {}: {}", ind, interface);
         }
     }
 }

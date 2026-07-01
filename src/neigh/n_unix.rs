@@ -4,21 +4,20 @@ use std::process::Command;
 
 use crate::error::CrossNetError;
 use crate::iface::MacAddr;
-use crate::neigh::NetIf;
 
 #[derive(Debug, Clone)]
-struct UnixNetNeigh {
+pub struct UnixNetNeigh {
     pub if_name: String,
     pub ip: IpAddr,
     pub mac: MacAddr,
 }
 
-fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
+pub fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     let ipv4_output = Command::new("arp").arg("-an").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     // ignore incomplete entries
     let arp_re = Regex::new(
-        r"^\?\s+\((?P<ip>[\w\d.]+)\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+(?P<dev>\S+)\s+\S+\s+\S+\s+\[\S+\]",
+        r"^\?\s+\((?P<ip>[\w\d.]+)\)\s+at\s+(?P<mac>[0-9a-fA-F:]+)\s+on\s+(?P<dev>\S+)\s+\S+\s+(\S+\s+)?\[\S+\]$",
     )?;
     // ? (169.254.169.254) at (incomplete) on en0 [ethernet]
     // ? (172.16.86.1) at c2:c7:db:1d:39:66 on bridge102 ifscope permanent [bridge]
@@ -40,6 +39,7 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
 
     let mut rets = Vec::new();
     for line in ipv4_output_str.lines() {
+        let line = line.trim();
         if let Some(caps) = arp_re.captures(line) {
             let ip = match caps.name("ip") {
                 Some(ip_str) => {
@@ -66,6 +66,9 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
                 let unn = UnixNetNeigh { if_name, ip, mac };
                 rets.push(unn);
             }
+        } else {
+            #[cfg(feature = "debug")]
+            eprintln!("no match for line: [{}]", line);
         }
     }
 
@@ -98,6 +101,7 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     // fe80::c0c7:dbff:fe1d:3966%bridge102     c2:c7:db:1d:39:66 bridge102 permanent R
 
     for line in ipv6_output_str.lines() {
+        let line = line.trim();
         if let Some(caps) = ndp_re.captures(line) {
             let ip = match caps.name("ip") {
                 Some(ip_str) => {
@@ -124,6 +128,9 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
                 let unn = UnixNetNeigh { if_name, ip, mac };
                 rets.push(unn);
             }
+        } else {
+            #[cfg(feature = "debug")]
+            eprintln!("no match for line: [{}]", line);
         }
     }
 
@@ -144,8 +151,8 @@ mod tests {
         let rets = get_net_neighs().unwrap();
         for ret in rets {
             println!(
-                "index: {}, ip: {}, mac: {}",
-                ret.if_index,
+                "if_name: {}, ip: {}, mac: {}",
+                ret.if_name,
                 ret.ip.to_string(),
                 ret.mac.to_string()
             );
