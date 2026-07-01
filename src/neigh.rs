@@ -19,12 +19,27 @@ use n_linux::get_net_ifs;
 #[cfg(target_os = "linux")]
 use n_linux::get_net_neighs;
 
-#[cfg(target_os = "macos")]
-pub mod n_macos;
-#[cfg(target_os = "macos")]
-use n_macos::get_net_ifs;
-#[cfg(target_os = "macos")]
-use n_macos::get_net_neighs;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+pub mod n_unix;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+use n_unix::get_net_ifs;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+use n_unix::get_net_neighs;
 
 #[derive(Debug, Clone)]
 pub struct NetIf {

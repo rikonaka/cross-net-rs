@@ -72,8 +72,9 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     let ipv6_output = Command::new("ndp").arg("-an").output()?;
     let ipv6_output_str = String::from_utf8_lossy(&ipv6_output.stdout);
 
-    let ndp_re =
-        Regex::new(r"^(?P<ip>[0-9\w:%]+)\s+(?P<mac>[0-9a-fA-F:]+)\s+\S+\s+\S+\s+\w(\s+\w)?")?;
+    let ndp_re = Regex::new(
+        r"^(?P<ip>[0-9\w:]+)(%[\w\d]+)?\s+(?P<mac>[0-9a-fA-F:]+)\s+(?P<dev>[\w\d]+)\s+\S+\s+\w(\s+\w)?$",
+    )?;
     // Neighbor                                Linklayer Address  Netif Expire    St Flgs Prbs
     // 2409:8a6c:1763:4351::1000               de:cb:f1:62:24:68    en0 permanent R
     // 2409:8a6c:1763:4351:da:8c8b:e171:9e55   de:cb:f1:62:24:68    en0 permanent R
@@ -127,4 +128,27 @@ fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     }
 
     Ok(rets)
+}
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_unix() {
+        let rets = get_net_neighs().unwrap();
+        for ret in rets {
+            println!(
+                "index: {}, ip: {}, mac: {}",
+                ret.if_index,
+                ret.ip.to_string(),
+                ret.mac.to_string()
+            );
+        }
+    }
 }
