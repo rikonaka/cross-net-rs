@@ -1,3 +1,6 @@
+// On macOS and other Unix-like operating systems,
+// we obtain information by directly interacting with the shell,
+// as there is no concise or convenient ABI available for us to call.
 use regex::Regex;
 use std::net::IpAddr;
 use std::process::Command;
