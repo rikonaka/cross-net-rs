@@ -36,7 +36,7 @@ async fn get_ifs_async() -> Result<Vec<NetIf>, CrossNetError> {
     Ok(rets)
 }
 
-pub fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
+pub(crate) fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
     let rt = Runtime::new()?;
     rt.block_on(async { get_ifs_async().await })
 }
@@ -136,7 +136,7 @@ async fn get_neighs_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
     Ok(rets)
 }
 
-pub fn get_net_neighs() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
+pub(crate) fn get_net_neighs() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
     let rt = Runtime::new()?;
     rt.block_on(async { get_neighs_async().await })
 }

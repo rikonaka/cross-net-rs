@@ -15,10 +15,27 @@ pub mod r_windows;
 #[cfg(target_os = "windows")]
 use r_windows::get_net_routes;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 pub mod r_unix;
-#[cfg(target_os = "macos")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 use r_unix::get_net_routes;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+use r_unix::search_route;
 
 #[derive(Debug, Clone, Hash)]
 pub enum NetRouteAddr {
@@ -66,6 +83,13 @@ pub struct NetRoute {
     pub gateway: Option<NetRouteAddr>,
     pub ntype: NetType,
     pub family: NetFamily,
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
+    pub if_name: Option<String>,
 }
 
 impl fmt::Display for NetRoute {
@@ -105,6 +129,7 @@ impl fmt::Display for RouteCache {
 }
 
 impl RouteCache {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn search_route(&self, dst_addr: IpAddr) -> Option<NetRoute> {
         for route in &self.0 {
             match &route.dst {
@@ -119,6 +144,59 @@ impl RouteCache {
                     }
                 }
                 None => {}
+            }
+        }
+
+        // no route found for the given destination address
+        // now we use the default route if it exists
+        for route in &self.0 {
+            match dst_addr {
+                IpAddr::V4(_) => {
+                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv4 {
+                        return Some(route.clone());
+                    }
+                }
+                IpAddr::V6(_) => {
+                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv6 {
+                        return Some(route.clone());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
+    pub fn search_route(&self, dst_addr: IpAddr) -> Option<NetRoute> {
+        let family = match dst_addr {
+            IpAddr::V4(_) => NetFamily::Ipv4,
+            IpAddr::V6(_) => NetFamily::Ipv6,
+        };
+
+        match search_route(dst_addr) {
+            Ok(srr) => {
+                if let Some(interface) = srr.interface {
+                    if let Some(gateway) = srr.gateway {
+                        let nr = NetRoute {
+                            dst: Some(NetRouteAddr::IpAddr(dst_addr)),
+                            src: None,
+                            gateway: Some(NetRouteAddr::IpAddr(gateway)),
+                            ntype: NetType::Default,
+                            family,
+                            if_name: Some(interface),
+                        };
+                        return Some(nr);
+                    }
+                }
+            }
+            Err(e) => {
+                #[cfg(feature = "debug")]
+                eprintln!("search route error: {}", e);
             }
         }
 

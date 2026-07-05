@@ -146,7 +146,7 @@ async fn get_route_async() -> Result<Vec<NetRoute>, CrossNetError> {
     Ok(rets)
 }
 
-pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
+pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let rt = Runtime::new()?;
     rt.block_on(async { get_route_async().await })
 }

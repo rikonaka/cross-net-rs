@@ -16,7 +16,7 @@ use crate::route::NetRoute;
 use crate::route::NetRouteAddr;
 use crate::route::NetType;
 
-pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
+pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let mut rets = Vec::new();
     unsafe {
         let mut table_ptr: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();

@@ -21,7 +21,7 @@ fn utf16_array_to_string(buf: &[u16]) -> String {
     String::from_utf16_lossy(&buf[..len])
 }
 
-pub fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
+pub(crate) fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
     let mut rets = Vec::new();
 
     unsafe {
@@ -79,7 +79,7 @@ fn sockaddr_inet_to_ipaddr(addr: &SOCKADDR_INET) -> Result<Option<IpAddr>, Cross
     }
 }
 
-pub fn get_net_neighs() -> Result<Vec<WindowsNetNeigh>, CrossNetError> {
+pub(crate) fn get_net_neighs() -> Result<Vec<WindowsNetNeigh>, CrossNetError> {
     let mut rets = Vec::new();
     unsafe {
         let mut table_ptr = std::ptr::null_mut();

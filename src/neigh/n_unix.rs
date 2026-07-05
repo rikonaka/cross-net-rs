@@ -15,7 +15,7 @@ pub struct UnixNetNeigh {
     pub mac: MacAddr,
 }
 
-pub fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
+pub(crate) fn get_net_neighs() -> Result<Vec<UnixNetNeigh>, CrossNetError> {
     let ipv4_output = Command::new("arp").arg("-an").output()?;
     let ipv4_output_str = String::from_utf8_lossy(&ipv4_output.stdout);
     // ignore incomplete entries
