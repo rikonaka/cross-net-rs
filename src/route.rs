@@ -180,19 +180,26 @@ impl RouteCache {
 
         match search_route(dst_addr) {
             Ok(srr) => {
-                if let Some(interface) = srr.interface {
-                    if let Some(gateway) = srr.gateway {
-                        let nr = NetRoute {
-                            dst: Some(NetRouteAddr::IpAddr(dst_addr)),
-                            src: None,
-                            gateway: Some(NetRouteAddr::IpAddr(gateway)),
-                            ntype: NetType::Default,
-                            family,
-                            if_name: Some(interface),
-                        };
-                        return Some(nr);
-                    }
-                }
+                let ntype = if srr.is_route {
+                    NetType::Default
+                } else {
+                    NetType::Normal
+                };
+
+                let dst = Some(NetRouteAddr::IpAddr(dst_addr));
+                let src = None;
+                let gateway = srr.gateway.map(NetRouteAddr::IpAddr);
+                let if_name = srr.interface.clone();
+
+                let nr = NetRoute {
+                    dst,
+                    src,
+                    gateway,
+                    ntype,
+                    family,
+                    if_name,
+                };
+                return Some(nr);
             }
             Err(e) => {
                 #[cfg(feature = "debug")]
@@ -248,9 +255,7 @@ mod tests {
         for dst_addr in dst_addrs {
             let route = routes.search_route(dst_addr);
             match route {
-                Some(r) => {
-                    println!("found route for {}: {}", dst_addr, r);
-                }
+                Some(r) => println!("{:?}", r),
                 None => {
                     println!("no route found for {}", dst_addr);
                 }

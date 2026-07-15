@@ -179,9 +179,11 @@ pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     Ok(rets)
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct SearchRouteRet {
     pub interface: Option<String>,
     pub gateway: Option<IpAddr>,
+    pub is_route: bool,
 }
 
 pub(crate) fn search_route(ip: IpAddr) -> Result<SearchRouteRet, CrossNetError> {
@@ -209,21 +211,31 @@ pub(crate) fn search_route(ip: IpAddr) -> Result<SearchRouteRet, CrossNetError> 
     //  recvpipe  sendpipe  ssthresh  rtt,msec    rttvar  hopcount      mtu     expire
     //        0         0         0         0         0         0      1500         0
 
-    let mut interface: Option<String> = None;
-    let mut gateway: Option<IpAddr> = None;
+    let mut interface = None;
+    let mut gateway = None;
+    let mut is_route = false;
 
     for line in output_str.lines() {
         let line = line.trim();
+        if line.starts_with("destination:") {
+            let parts: Vec<&str> = line.split(":").collect();
+            if parts.len() == 2 {
+                let destination_str = parts[1].trim();
+                if destination_str == "default" {
+                    is_route = true;
+                }
+            }
+        }
         if line.starts_with("interface:") {
             let parts: Vec<&str> = line.split(":").collect();
-            if parts.len() >= 2 {
+            if parts.len() == 2 {
                 let interface_str = parts[1].trim().to_string();
                 interface = Some(interface_str);
             }
         }
         if line.starts_with("gateway:") {
             let parts: Vec<&str> = line.split(":").collect();
-            if parts.len() >= 2 {
+            if parts.len() == 2 {
                 let gateway_str = parts[1].trim();
                 if gateway_str.len() > 0 {
                     let gateway_ip: IpAddr = gateway_str.parse()?;
@@ -233,7 +245,11 @@ pub(crate) fn search_route(ip: IpAddr) -> Result<SearchRouteRet, CrossNetError> 
         }
     }
 
-    let ret = SearchRouteRet { interface, gateway };
+    let ret = SearchRouteRet {
+        interface,
+        gateway,
+        is_route,
+    };
     Ok(ret)
 }
 
