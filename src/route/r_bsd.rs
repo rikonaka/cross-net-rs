@@ -1,23 +1,8 @@
-use libc::AF_INET;
-use libc::AF_INET6;
-use libc::AF_LINK;
-use libc::c_void;
-use libc::sockaddr;
-use libc::sockaddr_dl;
-use libc::sockaddr_in;
-use libc::sockaddr_in6;
+use libc::{AF_INET, AF_INET6, AF_LINK, c_void, sockaddr, sockaddr_dl, sockaddr_in, sockaddr_in6};
 use std::io;
-use std::mem::size_of;
-use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
+use std::mem::{align_of, size_of};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ptr;
-
-use crate::error::CrossNetError;
-use crate::iface::NetFamily;
-use crate::route::NetRoute;
-use crate::route::NetRouteAddr;
-use crate::route::NetType;
 
 #[derive(Debug, Clone)]
 struct RouteEntry {
@@ -28,54 +13,66 @@ struct RouteEntry {
     flags: i32,
 }
 
+// FreeBSD route address indexes
 const RTAX_DST: usize = 0;
 const RTAX_GATEWAY: usize = 1;
 const RTAX_NETMASK: usize = 2;
 const RTAX_IFP: usize = 4;
 const RTAX_MAX: usize = 8;
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RtMsghdrCompat {
+    rtm_msglen: u16,
+    rtm_version: u8,
+    rtm_type: u8,
+    rtm_index: u16,
+    rtm_flags: i32,
+    rtm_addrs: i32,
+    // ... other fields are not needed for our purpose
+}
+
 #[inline]
 fn roundup_sa(len: usize) -> usize {
-    let align = size_of::<usize>();
-    (len + align - 1) & !(align - 1)
+    let a = align_of::<usize>();
+    (len + a - 1) & !(a - 1)
 }
 
 unsafe fn parse_sockaddr_ip(sa: *const sockaddr) -> Option<IpAddr> {
     if sa.is_null() {
         return None;
     }
-
-    match (*sa).sa_family as i32 {
+    match unsafe { (*sa).sa_family as i32 } {
         AF_INET => {
             let sin = sa as *const sockaddr_in;
-            let octets = (*sin).sin_addr.s_addr.to_be_bytes();
+            let octets = unsafe { (*sin).sin_addr.s_addr.to_be_bytes() };
             Some(IpAddr::V4(Ipv4Addr::from(octets)))
         }
         AF_INET6 => {
             let sin6 = sa as *const sockaddr_in6;
-            Some(IpAddr::V6(Ipv6Addr::from((*sin6).sin6_addr.s6_addr)))
+            Some(IpAddr::V6(Ipv6Addr::from(unsafe {
+                (*sin6).sin6_addr.s6_addr
+            })))
         }
         _ => None,
     }
 }
 
 unsafe fn parse_ifname(sa: *const sockaddr) -> Option<String> {
-    if sa.is_null() || (*sa).sa_family as i32 != AF_LINK {
+    if sa.is_null() || unsafe { (*sa).sa_family as i32 } != AF_LINK {
         return None;
     }
     let sdl = sa as *const sockaddr_dl;
-    let nlen = (*sdl).sdl_nlen as usize;
+    let nlen = unsafe { (*sdl).sdl_nlen as usize };
     if nlen == 0 {
         return None;
     }
-
-    let base = (*sdl).sdl_data.as_ptr() as *const u8;
-    let name = std::slice::from_raw_parts(base, nlen);
+    let base = unsafe { (*sdl).sdl_data.as_ptr() as *const u8 };
+    let name = unsafe { std::slice::from_raw_parts(base, nlen) };
     Some(String::from_utf8_lossy(name).to_string())
 }
 
 unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
-    // FreeBSD: CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP, 0
     let mut mib = [
         libc::CTL_NET,
         libc::PF_ROUTE,
@@ -110,30 +107,28 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
     {
         return Err(io::Error::last_os_error());
     }
-
     buf.truncate(needed);
 
     let mut out = Vec::new();
     let mut off = 0usize;
 
-    while off + size_of::<libc::rt_msghdr>() <= buf.len() {
-        let rtm = &*(buf.as_ptr().add(off) as *const libc::rt_msghdr);
+    while off + size_of::<RtMsghdrCompat>() <= buf.len() {
+        let rtm = &*(buf.as_ptr().add(off) as *const RtMsghdrCompat);
         let msglen = rtm.rtm_msglen as usize;
-        if msglen == 0 || off + msglen > buf.len() {
+        if msglen < size_of::<RtMsghdrCompat>() || off + msglen > buf.len() {
             break;
         }
-
         if rtm.rtm_version != libc::RTM_VERSION as u8 {
             off += msglen;
             continue;
         }
 
         let mut addrs: [*const sockaddr; RTAX_MAX] = [ptr::null(); RTAX_MAX];
-        let mut p = (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr>());
-        let addrs_mask = rtm.rtm_addrs as i32;
+        let mut p = buf.as_ptr().add(off + size_of::<RtMsghdrCompat>());
+        let mask = rtm.rtm_addrs as i32;
 
         for i in 0..RTAX_MAX {
-            if (addrs_mask & (1 << i)) != 0 {
+            if (mask & (1 << i)) != 0 {
                 let sa = p as *const sockaddr;
                 addrs[i] = sa;
 
@@ -143,6 +138,9 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
                     (*sa).sa_len as usize
                 };
                 p = p.add(roundup_sa(slen));
+                if (p as usize) > (buf.as_ptr().add(off + msglen) as usize) {
+                    break;
+                }
             }
         }
 
