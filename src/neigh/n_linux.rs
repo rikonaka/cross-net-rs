@@ -23,7 +23,7 @@ async fn get_ifs_async() -> Result<Vec<NetIf>, CrossNetError> {
             let if_index = msg.header.index;
             match la {
                 LinkAttribute::IfName(if_name) => {
-                    let n = NetIf { if_name, if_index };
+                    let n = NetIf { ifname: if_name, ifindex: if_index };
                     if !rets.contains(&n) {
                         rets.push(n);
                     }
@@ -43,7 +43,7 @@ pub(crate) fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
 
 #[derive(Debug, Clone)]
 pub struct LinuxNetNeigh {
-    pub if_index: u32,
+    pub ifindex: u32,
     pub ip: IpAddr,
     pub mac: MacAddr,
     pub state: NeighbourState,
@@ -64,7 +64,7 @@ async fn get_neighs_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
     let mut rets = Vec::new();
 
     while let Some(msg) = neighs.try_next().await? {
-        let if_index = msg.header.ifindex;
+        let ifindex = msg.header.ifindex;
         let state = msg.header.state;
 
         let mut ip = None;
@@ -120,7 +120,7 @@ async fn get_neighs_async() -> Result<Vec<LinuxNetNeigh>, CrossNetError> {
             if let Some(ip) = ip {
                 if let Some(mac) = mac {
                     let n = LinuxNetNeigh {
-                        if_index,
+                        ifindex,
                         ip,
                         mac,
                         state,
@@ -151,7 +151,7 @@ mod tests {
         for ret in rets {
             println!(
                 "index: {}, ip: {}, mac: {}",
-                ret.if_index,
+                ret.ifindex,
                 ret.ip.to_string(),
                 ret.mac.to_string()
             );

@@ -49,7 +49,7 @@ pub(crate) fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
 
 #[derive(Debug, Clone)]
 pub struct WindowsNetNeigh {
-    pub if_index: u32,
+    pub ifindex: u32,
     pub ip: IpAddr,
     pub mac: MacAddr,
     pub state: i32,
@@ -100,7 +100,7 @@ pub(crate) fn get_net_neighs() -> Result<Vec<WindowsNetNeigh>, CrossNetError> {
             }
 
             let state = row.State.0;
-            let if_index = row.InterfaceIndex;
+            let ifindex = row.InterfaceIndex;
             let ip = sockaddr_inet_to_ipaddr(&row.Address)?;
             let mac_bytes = &row.PhysicalAddress[..row.PhysicalAddressLength as usize];
             let mac = if row.PhysicalAddressLength == 6 {
@@ -131,7 +131,7 @@ pub(crate) fn get_net_neighs() -> Result<Vec<WindowsNetNeigh>, CrossNetError> {
 
             if let Some(ip) = ip {
                 let n = WindowsNetNeigh {
-                    if_index,
+                    ifindex,
                     ip,
                     mac,
                     state,
@@ -157,7 +157,7 @@ mod tests {
         for ret in rets {
             println!(
                 "index: {}, ip: {}, mac: {}",
-                ret.if_index,
+                ret.ifindex,
                 ret.ip.to_string(),
                 ret.mac.to_string()
             );

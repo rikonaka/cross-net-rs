@@ -15,27 +15,15 @@ pub mod r_windows;
 #[cfg(target_os = "windows")]
 use r_windows::get_net_routes;
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-pub mod r_unix;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use r_unix::get_net_routes;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use r_unix::search_route;
+#[cfg(target_os = "macos")]
+pub mod r_macos;
+#[cfg(target_os = "macos")]
+use r_macos::get_net_routes;
+
+#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+pub mod r_bsd;
+#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+use r_bsd::get_net_routes;
 
 #[derive(Debug, Clone, Hash)]
 pub enum NetRouteAddr {

@@ -19,30 +19,25 @@ use n_linux::get_net_ifs;
 #[cfg(target_os = "linux")]
 use n_linux::get_net_neighs;
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-pub mod n_unix;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use n_unix::get_net_neighs;
+#[cfg(target_os = "macos")]
+pub mod n_macos;
+#[cfg(target_os = "macos")]
+use n_macos::get_net_neighs;
+
+#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+pub mod n_bsd;
+#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
+use n_bsd::get_net_neighs;
 
 #[derive(Debug, Clone)]
 pub struct NetIf {
-    pub if_name: String,
-    pub if_index: u32,
+    pub ifname: String,
+    pub ifindex: u32,
 }
 
 impl PartialEq for NetIf {
     fn eq(&self, other: &Self) -> bool {
-        self.if_index == other.if_index
+        self.ifindex == other.ifindex
     }
 }
 
@@ -52,9 +47,9 @@ pub struct MacInfo {
     /// The interface name associated with the MAC address, if available.
     /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
-    if_index: Option<u32>,
+    ifindex: Option<u32>,
     #[cfg(target_os = "macos")]
-    if_name: Option<String>,
+    ifname: Option<String>,
 }
 
 impl MacInfo {
@@ -62,10 +57,10 @@ impl MacInfo {
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn interface_name(&self) -> Result<Option<String>, CrossNetError> {
         let net_ifs = get_net_ifs()?;
-        if let Some(iface) = &self.if_index {
+        if let Some(iface) = &self.ifindex {
             for net_if in &net_ifs {
-                if iface == &net_if.if_index {
-                    return Ok(Some(net_if.if_name.clone()));
+                if iface == &net_if.ifindex {
+                    return Ok(Some(net_if.ifname.clone()));
                 }
             }
         }
@@ -79,7 +74,7 @@ impl fmt::Display for NeighborCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (ip, mac_info) in &self.0 {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
-            let iface_str = match &mac_info.if_index {
+            let iface_str = match &mac_info.ifindex {
                 Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
@@ -108,9 +103,9 @@ pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
         let mac_info = MacInfo {
             mac: n.mac,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
-            if_index: Some(n.if_index),
+            ifindex: Some(n.ifindex),
             #[cfg(target_os = "macos")]
-            if_name: Some(n.if_name),
+            ifname: Some(n.ifname),
         };
         rets.insert(n.ip, mac_info);
     }
@@ -127,7 +122,7 @@ mod tests {
         let neighbor_cache = get_neighbor_cache().unwrap();
         for (ip, mac_info) in &neighbor_cache.0 {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
-            let interface = match &mac_info.if_index {
+            let interface = match &mac_info.ifindex {
                 Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
@@ -144,7 +139,7 @@ mod tests {
             );
 
             #[cfg(any(target_os = "linux", target_os = "windows"))]
-            let ind = mac_info.if_index.clone().unwrap_or_default();
+            let ind = mac_info.ifindex.clone().unwrap_or_default();
             #[cfg(target_os = "macos")]
             let ind = mac_info.if_name.clone().unwrap_or_default();
             println!("Interface name for ind {}: {}", ind, interface);

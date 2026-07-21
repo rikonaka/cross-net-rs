@@ -9,7 +9,6 @@ use std::net::IpAddr;
 use subnetwork::IpPool;
 use subnetwork::Ipv4Pool;
 use subnetwork::Ipv6Pool;
-
 use tokio::runtime::Runtime;
 
 use crate::error::CrossNetError;
