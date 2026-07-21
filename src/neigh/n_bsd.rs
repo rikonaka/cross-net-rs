@@ -4,6 +4,9 @@ use std::mem::{align_of, size_of};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ptr;
 
+use crate::error::CrossNetError;
+use crate::iface::MacAddr;
+
 #[derive(Debug, Clone)]
 struct NeighEntry {
     ip: Option<IpAddr>,
@@ -102,27 +105,31 @@ unsafe fn list_neighbors() -> io::Result<Vec<NeighEntry>> {
     ];
 
     let mut needed: usize = 0;
-    if libc::sysctl(
-        mib.as_mut_ptr(),
-        mib.len() as u32,
-        ptr::null_mut(),
-        &mut needed,
-        ptr::null_mut(),
-        0,
-    ) < 0
+    if unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            ptr::null_mut(),
+            &mut needed,
+            ptr::null_mut(),
+            0,
+        )
+    } < 0
     {
         return Err(io::Error::last_os_error());
     }
 
     let mut buf = vec![0u8; needed];
-    if libc::sysctl(
-        mib.as_mut_ptr(),
-        mib.len() as u32,
-        buf.as_mut_ptr() as *mut c_void,
-        &mut needed,
-        ptr::null_mut(),
-        0,
-    ) < 0
+    if unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            buf.as_mut_ptr() as *mut c_void,
+            &mut needed,
+            ptr::null_mut(),
+            0,
+        )
+    } < 0
     {
         return Err(io::Error::last_os_error());
     }

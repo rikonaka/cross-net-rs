@@ -4,6 +4,11 @@ use std::mem::{align_of, size_of};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ptr;
 
+use crate::error::CrossNetError;
+use crate::route::NetFamily;
+use crate::route::NetRouteAddr;
+use crate::route::NetType;
+
 #[derive(Debug, Clone)]
 struct RouteEntry {
     destination: Option<IpAddr>,

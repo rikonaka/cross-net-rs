@@ -48,7 +48,12 @@ pub struct MacInfo {
     /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     ifindex: Option<u32>,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
     ifname: Option<String>,
 }
 
@@ -78,12 +83,17 @@ impl fmt::Display for NeighborCache {
                 Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
-            #[cfg(target_os = "macos")]
-            let iface_str = match &mac_info.if_name {
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
+            let iface_str = match &mac_info.ifname {
                 Some(iface) => iface.clone(),
                 None => "N/A".to_string(),
             };
-            write!(f, "{}:{}({})", ip, mac_info.mac.to_string(), iface_str,)?;
+            write!(f, "{}:{}({})", ip, mac_info.mac.to_string(), iface_str)?;
         }
         Ok(())
     }
@@ -104,7 +114,12 @@ pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
             mac: n.mac,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             ifindex: Some(n.ifindex),
-            #[cfg(target_os = "macos")]
+            #[cfg(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd"
+            ))]
             ifname: Some(n.ifname),
         };
         rets.insert(n.ip, mac_info);
@@ -127,7 +142,7 @@ mod tests {
                 None => "N/A".to_string(),
             };
             #[cfg(target_os = "macos")]
-            let interface = match &mac_info.if_name {
+            let interface = match &mac_info.ifname {
                 Some(iface) => iface.clone(),
                 None => "N/A".to_string(),
             };
@@ -141,7 +156,7 @@ mod tests {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             let ind = mac_info.ifindex.clone().unwrap_or_default();
             #[cfg(target_os = "macos")]
-            let ind = mac_info.if_name.clone().unwrap_or_default();
+            let ind = mac_info.ifname.clone().unwrap_or_default();
             println!("Interface name for ind {}: {}", ind, interface);
         }
     }
