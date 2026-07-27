@@ -77,7 +77,7 @@ pub struct NetRoute {
         target_os = "openbsd",
         target_os = "netbsd"
     ))]
-    pub if_name: Option<String>,
+    pub ifname: Option<String>,
 }
 
 impl fmt::Display for NetRoute {
@@ -117,7 +117,6 @@ impl fmt::Display for RouteCache {
 }
 
 impl RouteCache {
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
     pub fn search_route(&self, dst_addr: IpAddr) -> Option<NetRoute> {
         for route in &self.0 {
             match &route.dst {
@@ -132,66 +131,6 @@ impl RouteCache {
                     }
                 }
                 None => {}
-            }
-        }
-
-        // no route found for the given destination address
-        // now we use the default route if it exists
-        for route in &self.0 {
-            match dst_addr {
-                IpAddr::V4(_) => {
-                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv4 {
-                        return Some(route.clone());
-                    }
-                }
-                IpAddr::V6(_) => {
-                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv6 {
-                        return Some(route.clone());
-                    }
-                }
-            }
-        }
-
-        None
-    }
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
-    pub fn search_route(&self, dst_addr: IpAddr) -> Option<NetRoute> {
-        let family = match dst_addr {
-            IpAddr::V4(_) => NetFamily::Ipv4,
-            IpAddr::V6(_) => NetFamily::Ipv6,
-        };
-
-        match search_route(dst_addr) {
-            Ok(srr) => {
-                let ntype = if srr.is_route {
-                    NetType::Default
-                } else {
-                    NetType::Normal
-                };
-
-                let dst = Some(NetRouteAddr::IpAddr(dst_addr));
-                let src = None;
-                let gateway = srr.gateway.map(NetRouteAddr::IpAddr);
-                let if_name = srr.interface.clone();
-
-                let nr = NetRoute {
-                    dst,
-                    src,
-                    gateway,
-                    ntype,
-                    family,
-                    if_name,
-                };
-                return Some(nr);
-            }
-            Err(e) => {
-                #[cfg(feature = "debug")]
-                eprintln!("search route error: {}", e);
             }
         }
 

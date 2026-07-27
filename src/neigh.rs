@@ -120,7 +120,7 @@ pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
                 target_os = "openbsd",
                 target_os = "netbsd"
             ))]
-            ifname: Some(n.ifname),
+            ifname: n.ifname,
         };
         rets.insert(n.ip, mac_info);
     }

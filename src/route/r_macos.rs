@@ -1,9 +1,7 @@
 use libc::c_int;
 use libc::c_void;
-use std::ffi::CStr;
 use std::io;
 use std::mem::size_of;
-use std::mem::zeroed;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
@@ -25,7 +23,6 @@ struct RouteEntry {
     gateway: Option<IpAddr>,
     netmask: Option<IpAddr>,
     ifname: Option<String>,
-    flags: i32,
 }
 
 const RTAX_DST: usize = 0;
@@ -40,75 +37,112 @@ fn roundup_sa(len: usize) -> usize {
     (len + align - 1) & !(align - 1)
 }
 
-unsafe fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
+fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
     if sa.is_null() {
         return None;
     }
-    let fam = (*sa).sa_family as c_int;
+    let fam = unsafe { (*sa).sa_family as c_int };
     match fam {
         libc::AF_INET => {
             let sin: *const libc::sockaddr_in = sa as *const libc::sockaddr_in;
-            let octets = (*sin).sin_addr.s_addr.to_be_bytes();
+            let octets = unsafe { (*sin).sin_addr.s_addr.to_be_bytes() };
             Some(IpAddr::V4(Ipv4Addr::from(octets)))
         }
         libc::AF_INET6 => {
             let sin6: *const libc::sockaddr_in6 = sa as *const libc::sockaddr_in6;
-            Some(IpAddr::V6(Ipv6Addr::from((*sin6).sin6_addr.s6_addr)))
+            let x = unsafe { (*sin6).sin6_addr.s6_addr };
+            Some(IpAddr::V6(Ipv6Addr::from(x)))
         }
-        _ => None,
+        libc::AF_LINK => {
+            let x = parse_lladdr(sa);
+            println!("parse_sockaddr_ip: AF_LINK, lladdr: {:?}", x);
+            None
+        }
+        _ => {
+            println!("unknown address family: {}", fam);
+            None
+        }
     }
 }
 
-unsafe fn parse_ifname(sa: *const libc::sockaddr) -> Option<String> {
+fn parse_ifname(sa: *const libc::sockaddr) -> Option<String> {
     if sa.is_null() {
         return None;
     }
-    if (*sa).sa_family as c_int != libc::AF_LINK {
+    if unsafe { (*sa).sa_family as c_int } != libc::AF_LINK {
         return None;
     }
     let sdl = sa as *const libc::sockaddr_dl;
-    let nlen = (*sdl).sdl_nlen as usize;
+    let nlen = unsafe { (*sdl).sdl_nlen as usize };
     if nlen == 0 {
         return None;
     }
-    let base = (*sdl).sdl_data.as_ptr() as *const i8;
-    let bytes = std::slice::from_raw_parts(base as *const u8, nlen);
+    let base = unsafe { (*sdl).sdl_data.as_ptr() as *const i8 };
+    let bytes = unsafe { std::slice::from_raw_parts(base as *const u8, nlen) };
     Some(String::from_utf8_lossy(bytes).to_string())
 }
 
-unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
+fn parse_lladdr(sa: *const libc::sockaddr) -> Option<String> {
+    if sa.is_null() || unsafe { (*sa).sa_family as c_int } != libc::AF_LINK {
+        return None;
+    }
+    let sdl = sa as *const libc::sockaddr_dl;
+
+    let nlen = unsafe { (*sdl).sdl_nlen as usize };
+    let alen = unsafe { (*sdl).sdl_alen as usize };
+    if alen == 0 {
+        return None;
+    }
+
+    let base = unsafe { (*sdl).sdl_data.as_ptr() as *const u8 };
+    let mac_ptr = unsafe { base.add(nlen) };
+    let mac = unsafe { std::slice::from_raw_parts(mac_ptr, alen) };
+
+    Some(
+        mac.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join(":"),
+    )
+}
+
+fn list_routes() -> io::Result<Vec<RouteEntry>> {
     // CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP2, 0
     let mut mib = [
         libc::CTL_NET,
         libc::PF_ROUTE,
         0,
         libc::AF_UNSPEC,
-        libc::NET_RT_DUMP2,
+        libc::NET_RT_DUMP,
         0,
     ];
 
     let mut needed: usize = 0;
-    if libc::sysctl(
-        mib.as_mut_ptr(),
-        mib.len() as u32,
-        ptr::null_mut(),
-        &mut needed,
-        ptr::null_mut(),
-        0,
-    ) < 0
+    if unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            ptr::null_mut(),
+            &mut needed,
+            ptr::null_mut(),
+            0,
+        )
+    } < 0
     {
         return Err(io::Error::last_os_error());
     }
 
     let mut buf = vec![0u8; needed];
-    if libc::sysctl(
-        mib.as_mut_ptr(),
-        mib.len() as u32,
-        buf.as_mut_ptr() as *mut c_void,
-        &mut needed,
-        ptr::null_mut(),
-        0,
-    ) < 0
+    if unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            mib.len() as u32,
+            buf.as_mut_ptr() as *mut c_void,
+            &mut needed,
+            ptr::null_mut(),
+            0,
+        )
+    } < 0
     {
         return Err(io::Error::last_os_error());
     }
@@ -119,7 +153,7 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
     let mut off = 0usize;
 
     while off + size_of::<libc::rt_msghdr2>() <= buf.len() {
-        let rtm = &*(buf.as_ptr().add(off) as *const libc::rt_msghdr2);
+        let rtm = unsafe { &*(buf.as_ptr().add(off) as *const libc::rt_msghdr2) };
         let msglen = rtm.rtm_msglen as usize;
         if msglen == 0 || off + msglen > buf.len() {
             break;
@@ -132,20 +166,21 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
 
         // RTM_GET/RTM_ADD/RTM_CHANGE
         let mut addrs: [*const libc::sockaddr; RTAX_MAX] = [ptr::null(); RTAX_MAX];
-        let mut p = (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr2>());
-        let mut addrs_mask = rtm.rtm_addrs as i32;
+        let mut p =
+            unsafe { (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr2>()) };
+        let addrs_mask = rtm.rtm_addrs as i32;
 
         for i in 0..RTAX_MAX {
             if (addrs_mask & (1 << i)) != 0 {
                 let sa = p as *const libc::sockaddr;
                 addrs[i] = sa;
 
-                let slen = if (*sa).sa_len == 0 {
+                let slen = if unsafe { (*sa).sa_len == 0 } {
                     size_of::<libc::sockaddr>()
                 } else {
-                    (*sa).sa_len as usize
+                    unsafe { (*sa).sa_len as usize }
                 };
-                p = p.add(roundup_sa(slen));
+                p = unsafe { p.add(roundup_sa(slen)) };
             }
         }
 
@@ -159,7 +194,6 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
             gateway,
             netmask,
             ifname,
-            flags: rtm.rtm_flags,
         });
 
         off += msglen;
@@ -169,9 +203,10 @@ unsafe fn list_routes() -> io::Result<Vec<RouteEntry>> {
 }
 
 pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
-    let routes = unsafe { list_routes()? };
+    let routes = list_routes()?;
     let mut rets = Vec::new();
     for r in routes {
+        println!("route entry: {:?}", r);
         if let (Some(dst), Some(gateway), Some(netmask), Some(ifname)) =
             (r.destination, r.gateway, r.netmask, r.ifname)
         {
@@ -199,14 +234,39 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
             };
             let gateway_addr = NetRouteAddr::IpAddr(gateway);
             let route = NetRoute {
-                dst,
+                dst: Some(dst),
                 src: None,
                 gateway: Some(gateway_addr),
-                ntype: NetType::Unicast,
+                ntype: NetType::Default,
                 family,
+                ifname: Some(ifname),
             };
             rets.push(route);
         }
     }
     Ok(rets)
+}
+
+#[cfg(target_os = "macos")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_macos() {
+        let rets = get_net_routes().unwrap();
+        println!("len: {:?}", rets.len());
+        for ret in rets {
+            if let Some(dst) = &ret.dst {
+                println!("dst: {}", dst);
+            }
+            if let Some(src) = &ret.src {
+                println!("src: {}", src);
+            }
+            if let Some(gateway) = &ret.gateway {
+                println!("gateway: {}", gateway);
+            }
+            println!("ntype: {:?}", ret.ntype);
+            println!("=================================");
+        }
+    }
 }
