@@ -54,12 +54,12 @@ fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
             Some(IpAddr::V6(Ipv6Addr::from(x)))
         }
         libc::AF_LINK => {
-            let x = parse_lladdr(sa);
-            println!("parse_sockaddr_ip: AF_LINK, lladdr: {:?}", x);
+            let _x = parse_lladdr(sa);
+            // println!("parse_sockaddr_ip: AF_LINK, lladdr: {:?}", x);
             None
         }
         _ => {
-            println!("unknown address family: {}", fam);
+            // println!("unknown address family: {}", fam);
             None
         }
     }
@@ -206,7 +206,6 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let routes = list_routes()?;
     let mut rets = Vec::new();
     for r in routes {
-        println!("route entry: {:?}", r);
         if let (Some(dst), Some(gateway), Some(netmask), Some(ifname)) =
             (r.destination, r.gateway, r.netmask, r.ifname)
         {
