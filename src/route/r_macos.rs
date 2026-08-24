@@ -206,42 +206,59 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let routes = list_routes()?;
     let mut rets = Vec::new();
     for r in routes {
-        if let (Some(dst), Some(gateway), Some(netmask), Some(ifname)) =
-            (r.destination, r.gateway, r.netmask, r.ifname)
-        {
-            let netmask_ext = NetmaskExt::from_addr(netmask);
-            let prefix = netmask_ext.get_prefix();
-            let (dst, family) = match dst {
-                IpAddr::V4(ipv4) => {
-                    let d = if prefix == 32 {
-                        NetRouteAddr::IpAddr(dst)
-                    } else {
-                        let pool = Ipv4Pool::new(ipv4, prefix)?;
-                        NetRouteAddr::IpPool(IpPool::V4(pool))
-                    };
-                    (d, NetFamily::Ipv4)
+        let prefix = match r.netmask {
+            Some(netmask) => {
+                let netmask_ext = NetmaskExt::from_addr(netmask);
+                let prefix = netmask_ext.get_prefix();
+                prefix
+            }
+            None => 0,
+        };
+        let (dst, family, ntype) = match r.destination {
+            Some(dst) => {
+                let n = if dst.is_unspecified() {
+                    NetType::Default
+                } else {
+                    NetType::Normal
+                };
+                match dst {
+                    IpAddr::V4(ipv4) => {
+                        let a = match prefix {
+                            32 | 0 => Some(NetRouteAddr::IpAddr(dst)),
+                            _ => {
+                                let pool = Ipv4Pool::new(ipv4, prefix)?;
+                                Some(NetRouteAddr::IpPool(IpPool::V4(pool)))
+                            }
+                        };
+                        (a, NetFamily::Ipv4, n)
+                    }
+                    IpAddr::V6(ipv6) => {
+                        let d = match prefix {
+                            128 | 0 => Some(NetRouteAddr::IpAddr(dst)),
+                            _ => {
+                                let pool = Ipv6Pool::new(ipv6, prefix)?;
+                                Some(NetRouteAddr::IpPool(IpPool::V6(pool)))
+                            }
+                        };
+                        (d, NetFamily::Ipv6, n)
+                    }
                 }
-                IpAddr::V6(ipv6) => {
-                    let d = if prefix == 128 {
-                        NetRouteAddr::IpAddr(dst)
-                    } else {
-                        let pool = Ipv6Pool::new(ipv6, prefix)?;
-                        NetRouteAddr::IpPool(IpPool::V6(pool))
-                    };
-                    (d, NetFamily::Ipv6)
-                }
-            };
-            let gateway_addr = NetRouteAddr::IpAddr(gateway);
-            let route = NetRoute {
-                dst: Some(dst),
-                src: None,
-                gateway: Some(gateway_addr),
-                ntype: NetType::Default,
-                family,
-                ifname: Some(ifname),
-            };
-            rets.push(route);
-        }
+            }
+            None => (None, NetFamily::Ipv4, NetType::Normal),
+        };
+        let gateway = match r.gateway {
+            Some(g) => Some(NetRouteAddr::IpAddr(g)),
+            None => None,
+        };
+        let route = NetRoute {
+            dst,
+            src: None,
+            gateway,
+            ntype,
+            family,
+            ifname: r.ifname,
+        };
+        rets.push(route);
     }
     Ok(rets)
 }
@@ -253,7 +270,8 @@ mod tests {
     #[test]
     fn test_macos() {
         let rets = get_net_routes().unwrap();
-        println!("len: {:?}", rets.len());
+        println!("rets len: {:?}", rets.len());
+        println!("=============================");
         for ret in rets {
             if let Some(dst) = &ret.dst {
                 println!("dst: {}", dst);
@@ -263,6 +281,9 @@ mod tests {
             }
             if let Some(gateway) = &ret.gateway {
                 println!("gateway: {}", gateway);
+            }
+            if let Some(ifname) = &ret.ifname {
+                println!("ifname: {}", ifname);
             }
             println!("ntype: {:?}", ret.ntype);
             println!("=================================");
