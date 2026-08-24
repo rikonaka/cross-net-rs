@@ -178,7 +178,7 @@ fn list_neighbors() -> io::Result<Vec<NeighEntry>> {
 
         off += msglen;
     }
-    println!("list_neighbors: {:?}", out);
+    // println!("list_neighbors: {:?}", out);
 
     Ok(out)
 }

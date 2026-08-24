@@ -21,7 +21,7 @@ enum MacAddrInner {
     Eui64(Eui64),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MacAddr(MacAddrInner);
 
 impl str::FromStr for MacAddr {
@@ -34,6 +34,13 @@ impl str::FromStr for MacAddr {
 }
 
 impl fmt::Display for MacAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.to_string();
+        write!(f, "{}", s)
+    }
+}
+
+impl fmt::Debug for MacAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.to_string();
         write!(f, "{}", s)

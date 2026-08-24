@@ -1,5 +1,6 @@
 use libc::c_int;
 use libc::c_void;
+use std::fmt;
 use std::io;
 use std::mem::size_of;
 use std::net::IpAddr;
@@ -28,7 +29,10 @@ struct RouteEntry {
 const RTAX_DST: usize = 0;
 const RTAX_GATEWAY: usize = 1;
 const RTAX_NETMASK: usize = 2;
-const RTAX_IFP: usize = 4;
+const RTAX_IFP: usize = 3;
+// const RTAX_IFA: usize = 4;
+// const RTAX_AUTHOR: usize = 5;
+// const RTAX_BRD: usize = 6;
 const RTAX_MAX: usize = 8;
 
 #[inline]
@@ -45,18 +49,15 @@ fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
     match fam {
         libc::AF_INET => {
             let sin: *const libc::sockaddr_in = sa as *const libc::sockaddr_in;
-            let octets = unsafe { (*sin).sin_addr.s_addr.to_be_bytes() };
-            Some(IpAddr::V4(Ipv4Addr::from(octets)))
+            let octets = unsafe { (*sin).sin_addr.s_addr.to_le_bytes() };
+            let s = IpAddr::V4(Ipv4Addr::from(octets));
+            Some(s)
         }
         libc::AF_INET6 => {
             let sin6: *const libc::sockaddr_in6 = sa as *const libc::sockaddr_in6;
-            let x = unsafe { (*sin6).sin6_addr.s6_addr };
-            Some(IpAddr::V6(Ipv6Addr::from(x)))
-        }
-        libc::AF_LINK => {
-            let _x = parse_lladdr(sa);
-            // println!("parse_sockaddr_ip: AF_LINK, lladdr: {:?}", x);
-            None
+            let octets = unsafe { (*sin6).sin6_addr.s6_addr };
+            let s = IpAddr::V6(Ipv6Addr::from(octets));
+            Some(s)
         }
         _ => {
             // println!("unknown address family: {}", fam);
