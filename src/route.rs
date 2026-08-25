@@ -95,6 +95,12 @@ impl fmt::Display for NetRoute {
         if let Some(gateway) = &self.gateway {
             output += &format!(", gateway: {}", gateway);
         }
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
         if let Some(ifname) = &self.ifname {
             output += &format!(", ifname: {}", ifname);
         }
