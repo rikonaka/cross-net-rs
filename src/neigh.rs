@@ -24,11 +24,6 @@ pub mod n_macos;
 #[cfg(target_os = "macos")]
 use n_macos::get_net_neighs;
 
-#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-pub mod n_bsd;
-#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-use n_bsd::get_net_neighs;
-
 #[derive(Debug, Clone)]
 pub struct NetIf {
     pub ifname: String,
@@ -99,6 +94,12 @@ impl fmt::Display for NeighborCache {
     }
 }
 
+impl fmt::Debug for NeighborCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
+    }
+}
+
 impl NeighborCache {
     pub fn search_mac(&self, ip: &IpAddr) -> Option<MacAddr> {
         self.0.get(ip).map(|mac_info| mac_info.mac)
@@ -144,7 +145,7 @@ mod tests {
             #[cfg(target_os = "macos")]
             let interface = match &mac_info.ifname {
                 Some(iface) => iface.clone(),
-                None => "N/A".to_string(),
+                None => "none".to_string(),
             };
             println!(
                 "IP: {}, MAC: {}, Interface: {}",

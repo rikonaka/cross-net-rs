@@ -20,13 +20,22 @@ struct NeighEntry {
 
 const RTAX_DST: usize = 0;
 const RTAX_GATEWAY: usize = 1;
+// const RTAX_NETMASK: usize = 2;
+// const RTAX_GENMASK: usize = 3;
 const RTAX_IFP: usize = 4;
+// const RTAX_IFA: usize = 5;
+// const RTAX_AUTHOR: usize = 6;
+// const RTAX_BRD: usize = 7;
 const RTAX_MAX: usize = 8;
 
 #[inline]
 fn roundup_sa(len: usize) -> usize {
-    let align = size_of::<usize>();
-    (len + align - 1) & !(align - 1)
+    // macOS / BSD kernel enforces 4‑byte alignment (sizeof(uint32_t))
+    if len == 0 {
+        4 // When sa_len is zero, occupies 4 bytes
+    } else {
+        (len + 3) & !3 // Round up to next multiple of 4
+    }
 }
 
 fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
@@ -38,7 +47,7 @@ fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
         libc::AF_INET => {
             let sin = sa as *const libc::sockaddr_in;
             Some(IpAddr::V4(Ipv4Addr::from(unsafe {
-                (*sin).sin_addr.s_addr.to_be_bytes()
+                (*sin).sin_addr.s_addr.to_le_bytes()
             })))
         }
         libc::AF_INET6 => {
@@ -135,8 +144,8 @@ fn list_neighbors() -> io::Result<Vec<NeighEntry>> {
     let mut out = Vec::new();
     let mut off = 0usize;
 
-    while off + size_of::<libc::rt_msghdr2>() <= buf.len() {
-        let rtm = unsafe { &*(buf.as_ptr().add(off) as *const libc::rt_msghdr2) };
+    while off + size_of::<libc::rt_msghdr>() <= buf.len() {
+        let rtm = unsafe { &*(buf.as_ptr().add(off) as *const libc::rt_msghdr) };
         let msglen = rtm.rtm_msglen as usize;
         if msglen == 0 || off + msglen > buf.len() {
             break;
@@ -148,7 +157,7 @@ fn list_neighbors() -> io::Result<Vec<NeighEntry>> {
 
         let mut addrs: [*const libc::sockaddr; RTAX_MAX] = [ptr::null(); RTAX_MAX];
         let mut p =
-            unsafe { (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr2>()) };
+            unsafe { (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr>()) };
         let addrs_mask = rtm.rtm_addrs as i32;
 
         for i in 0..RTAX_MAX {
@@ -156,12 +165,8 @@ fn list_neighbors() -> io::Result<Vec<NeighEntry>> {
                 let sa = p as *const libc::sockaddr;
                 addrs[i] = sa;
 
-                let slen = if unsafe { (*sa).sa_len } == 0 {
-                    size_of::<libc::sockaddr>()
-                } else {
-                    unsafe { (*sa).sa_len as usize }
-                };
-                p = unsafe { p.add(roundup_sa(slen)) };
+                let sa_len = unsafe { (*sa).sa_len as usize };
+                p = unsafe { p.add(roundup_sa(sa_len)) };
             }
         }
 

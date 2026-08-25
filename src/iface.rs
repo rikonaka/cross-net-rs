@@ -42,8 +42,7 @@ impl fmt::Display for MacAddr {
 
 impl fmt::Debug for MacAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = self.to_string();
-        write!(f, "{}", s)
+        fmt::Display::fmt(&self, f)
     }
 }
 

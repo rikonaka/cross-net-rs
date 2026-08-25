@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use subnetwork::IpPool;
 
 use crate::error::CrossNetError;
-use crate::iface::NetFamily;
+use crate::iface::{MacAddr, NetFamily};
 
 #[cfg(target_os = "linux")]
 pub mod r_linux;
@@ -20,15 +20,11 @@ pub mod r_macos;
 #[cfg(target_os = "macos")]
 use r_macos::get_net_routes;
 
-#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-pub mod r_bsd;
-#[cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
-use r_bsd::get_net_routes;
-
-#[derive(Debug, Clone, Hash)]
+#[derive(Clone, Hash)]
 pub enum NetRouteAddr {
     IpPool(IpPool),
     IpAddr(IpAddr),
+    MacAddr(MacAddr),
 }
 
 impl PartialEq for NetRouteAddr {
@@ -48,7 +44,14 @@ impl fmt::Display for NetRouteAddr {
         match self {
             NetRouteAddr::IpPool(pool) => write!(f, "{}", pool),
             NetRouteAddr::IpAddr(addr) => write!(f, "{}", addr),
+            NetRouteAddr::MacAddr(addr) => write!(f, "{}", addr),
         }
+    }
+}
+
+impl fmt::Debug for NetRouteAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
@@ -64,7 +67,7 @@ pub enum NetType {
     Default,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NetRoute {
     pub dst: Option<NetRouteAddr>,
     pub src: Option<NetRouteAddr>,
@@ -82,20 +85,27 @@ pub struct NetRoute {
 
 impl fmt::Display for NetRoute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut output = String::new();
         if let Some(dst) = &self.dst {
-            if let Some(src) = &self.src {
-                write!(f, "dst: {}, src: {}", dst, src)?;
-            } else {
-                write!(f, "dst: {}", dst)?;
-            }
-        } else if let Some(gateway) = &self.gateway {
-            if let Some(src) = &self.src {
-                write!(f, "gateway: {}, src: {}", gateway, src)?;
-            } else {
-                write!(f, "gateway: {}", gateway)?;
-            }
+            output += &format!("dst: {}", dst);
         }
+        if let Some(src) = &self.src {
+            output += &format!(", src: {}", src);
+        }
+        if let Some(gateway) = &self.gateway {
+            output += &format!(", gateway: {}", gateway);
+        }
+        if let Some(ifname) = &self.ifname {
+            output += &format!(", ifname: {}", ifname);
+        }
+        write!(f, "{}", output)?;
         Ok(())
+    }
+}
+
+impl fmt::Debug for NetRoute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
     }
 }
 
@@ -105,6 +115,7 @@ impl PartialEq for NetRoute {
     }
 }
 
+#[derive(Clone)]
 pub struct RouteCache(Vec<NetRoute>);
 
 impl fmt::Display for RouteCache {
@@ -113,6 +124,12 @@ impl fmt::Display for RouteCache {
             write!(f, "{}\n", route)?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Debug for RouteCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
     }
 }
 
@@ -130,6 +147,8 @@ impl RouteCache {
                         return Some(route.clone());
                     }
                 }
+                // The Mac address is not used for target route search.
+                Some(NetRouteAddr::MacAddr(_mac)) => (),
                 None => {}
             }
         }
@@ -150,7 +169,6 @@ impl RouteCache {
                 }
             }
         }
-
         None
     }
 }

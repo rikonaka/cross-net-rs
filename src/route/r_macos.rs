@@ -13,6 +13,7 @@ use subnetwork::Ipv6Pool;
 use subnetwork::NetmaskExt;
 
 use crate::error::CrossNetError;
+use crate::iface::MacAddr;
 use crate::iface::NetFamily;
 use crate::route::NetRoute;
 use crate::route::NetRouteAddr;
@@ -21,24 +22,52 @@ use crate::route::NetType;
 #[derive(Debug, Clone)]
 struct RouteEntry {
     destination: Option<IpAddr>,
-    gateway: Option<IpAddr>,
+    src: Option<IpAddr>,
+    gateway: Option<GatewayAddr>,
     netmask: Option<IpAddr>,
     ifname: Option<String>,
+}
+
+/// For MacOS, the gateway address can be an IP address or a MAC address.
+#[derive(Clone)]
+enum GatewayAddr {
+    IpAddr(IpAddr),
+    MacAddr(MacAddr),
+}
+
+impl fmt::Display for GatewayAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GatewayAddr::IpAddr(ip) => write!(f, "{}", ip),
+            GatewayAddr::MacAddr(mac) => write!(f, "{}", mac),
+        }
+    }
+}
+
+impl fmt::Debug for GatewayAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
+    }
 }
 
 const RTAX_DST: usize = 0;
 const RTAX_GATEWAY: usize = 1;
 const RTAX_NETMASK: usize = 2;
-const RTAX_IFP: usize = 3;
-// const RTAX_IFA: usize = 4;
-// const RTAX_AUTHOR: usize = 5;
-// const RTAX_BRD: usize = 6;
+// const RTAX_GENMASK: usize = 3;
+const RTAX_IFP: usize = 4;
+const RTAX_IFA: usize = 5;
+// const RTAX_AUTHOR: usize = 6;
+// const RTAX_BRD: usize = 7;
 const RTAX_MAX: usize = 8;
 
 #[inline]
 fn roundup_sa(len: usize) -> usize {
-    let align = size_of::<usize>();
-    (len + align - 1) & !(align - 1)
+    // macOS / BSD kernel enforces 4‑byte alignment (sizeof(uint32_t))
+    if len == 0 {
+        4 // When sa_len is zero, occupies 4 bytes
+    } else {
+        (len + 3) & !3 // Round up to next multiple of 4
+    }
 }
 
 fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
@@ -66,11 +95,46 @@ fn parse_sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
     }
 }
 
-fn parse_ifname(sa: *const libc::sockaddr) -> Option<String> {
+fn parse_sockaddr_gateway(sa: *const libc::sockaddr) -> Option<GatewayAddr> {
     if sa.is_null() {
         return None;
     }
-    if unsafe { (*sa).sa_family as c_int } != libc::AF_LINK {
+    let fam = unsafe { (*sa).sa_family as c_int };
+    match fam {
+        libc::AF_INET => {
+            let sin: *const libc::sockaddr_in = sa as *const libc::sockaddr_in;
+            let octets = unsafe { (*sin).sin_addr.s_addr.to_le_bytes() };
+            let s = IpAddr::V4(Ipv4Addr::from(octets));
+            Some(GatewayAddr::IpAddr(s))
+        }
+        libc::AF_INET6 => {
+            let sin6: *const libc::sockaddr_in6 = sa as *const libc::sockaddr_in6;
+            let octets = unsafe { (*sin6).sin6_addr.s6_addr };
+            let s = IpAddr::V6(Ipv6Addr::from(octets));
+            Some(GatewayAddr::IpAddr(s))
+        }
+        libc::AF_LINK => {
+            let lladr = parse_lladdr(sa);
+            match lladr {
+                Some(l) => match MacAddr::from_str(&l) {
+                    Ok(m) => Some(GatewayAddr::MacAddr(m)),
+                    Err(e) => {
+                        eprintln!("failed to parse mac address: {}", e);
+                        None
+                    }
+                },
+                _ => None,
+            }
+        }
+        _ => {
+            // println!("unknown address family: {}", fam);
+            None
+        }
+    }
+}
+
+fn parse_ifname(sa: *const libc::sockaddr) -> Option<String> {
+    if sa.is_null() || unsafe { (*sa).sa_family as c_int } != libc::AF_LINK {
         return None;
     }
     let sdl = sa as *const libc::sockaddr_dl;
@@ -88,7 +152,6 @@ fn parse_lladdr(sa: *const libc::sockaddr) -> Option<String> {
         return None;
     }
     let sdl = sa as *const libc::sockaddr_dl;
-
     let nlen = unsafe { (*sdl).sdl_nlen as usize };
     let alen = unsafe { (*sdl).sdl_alen as usize };
     if alen == 0 {
@@ -108,7 +171,7 @@ fn parse_lladdr(sa: *const libc::sockaddr) -> Option<String> {
 }
 
 fn list_routes() -> io::Result<Vec<RouteEntry>> {
-    // CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP2, 0
+    // CTL_NET, PF_ROUTE, 0, AF_UNSPEC, NET_RT_DUMP, 0
     let mut mib = [
         libc::CTL_NET,
         libc::PF_ROUTE,
@@ -153,8 +216,8 @@ fn list_routes() -> io::Result<Vec<RouteEntry>> {
     let mut routes = Vec::new();
     let mut off = 0usize;
 
-    while off + size_of::<libc::rt_msghdr2>() <= buf.len() {
-        let rtm = unsafe { &*(buf.as_ptr().add(off) as *const libc::rt_msghdr2) };
+    while off + size_of::<libc::rt_msghdr>() <= buf.len() {
+        let rtm = unsafe { &*(buf.as_ptr().add(off) as *const libc::rt_msghdr) };
         let msglen = rtm.rtm_msglen as usize;
         if msglen == 0 || off + msglen > buf.len() {
             break;
@@ -168,7 +231,7 @@ fn list_routes() -> io::Result<Vec<RouteEntry>> {
         // RTM_GET/RTM_ADD/RTM_CHANGE
         let mut addrs: [*const libc::sockaddr; RTAX_MAX] = [ptr::null(); RTAX_MAX];
         let mut p =
-            unsafe { (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr2>()) };
+            unsafe { (buf.as_ptr().add(off) as *const u8).add(size_of::<libc::rt_msghdr>()) };
         let addrs_mask = rtm.rtm_addrs as i32;
 
         for i in 0..RTAX_MAX {
@@ -176,22 +239,25 @@ fn list_routes() -> io::Result<Vec<RouteEntry>> {
                 let sa = p as *const libc::sockaddr;
                 addrs[i] = sa;
 
-                let slen = if unsafe { (*sa).sa_len == 0 } {
-                    size_of::<libc::sockaddr>()
-                } else {
-                    unsafe { (*sa).sa_len as usize }
-                };
-                p = unsafe { p.add(roundup_sa(slen)) };
+                let sa_len = unsafe { (*sa).sa_len as usize };
+                p = unsafe { p.add(roundup_sa(sa_len)) };
             }
         }
 
         let destination = parse_sockaddr_ip(addrs[RTAX_DST]);
-        let gateway = parse_sockaddr_ip(addrs[RTAX_GATEWAY]);
+        let gateway = parse_sockaddr_gateway(addrs[RTAX_GATEWAY]);
         let netmask = parse_sockaddr_ip(addrs[RTAX_NETMASK]);
         let ifname = parse_ifname(addrs[RTAX_IFP]);
+        let src = parse_sockaddr_ip(addrs[RTAX_IFA]);
+
+        // println!(
+        //     "destination: {:?}, src: {:?}, gateway: {:?}, netmask: {:?}, ifname: {:?}",
+        //     destination, src, gateway, netmask, ifname
+        // );
 
         routes.push(RouteEntry {
             destination,
+            src,
             gateway,
             netmask,
             ifname,
@@ -225,7 +291,27 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
                 match dst {
                     IpAddr::V4(ipv4) => {
                         let a = match prefix {
-                            32 | 0 => Some(NetRouteAddr::IpAddr(dst)),
+                            32 | 0 => {
+                                // For example
+                                // 127 127.0.0.1 UCS lo0
+                                // 192.168.5 link#22 UC bridge101 !
+                                let octets = ipv4.octets();
+                                let zero = octets.iter().filter(|o| **o == 0).count();
+
+                                let prefix = match zero {
+                                    1 => 24,
+                                    2 => 16,
+                                    3 => 8,
+                                    _ => 0,
+                                };
+
+                                if zero == 4 || prefix == 0 {
+                                    Some(NetRouteAddr::IpAddr(dst))
+                                } else {
+                                    let pool = Ipv4Pool::new(ipv4, prefix)?;
+                                    Some(NetRouteAddr::IpPool(IpPool::V4(pool)))
+                                }
+                            }
                             _ => {
                                 let pool = Ipv4Pool::new(ipv4, prefix)?;
                                 Some(NetRouteAddr::IpPool(IpPool::V4(pool)))
@@ -248,12 +334,19 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
             None => (None, NetFamily::Ipv4, NetType::Normal),
         };
         let gateway = match r.gateway {
-            Some(g) => Some(NetRouteAddr::IpAddr(g)),
+            Some(g) => match g {
+                GatewayAddr::IpAddr(i) => Some(NetRouteAddr::IpAddr(i)),
+                GatewayAddr::MacAddr(m) => Some(NetRouteAddr::MacAddr(m)),
+            },
+            None => None,
+        };
+        let src = match r.src {
+            Some(s) => Some(NetRouteAddr::IpAddr(s)),
             None => None,
         };
         let route = NetRoute {
             dst,
-            src: None,
+            src,
             gateway,
             ntype,
             family,
