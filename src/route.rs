@@ -62,7 +62,7 @@ impl fmt::Debug for NetRouteAddr {
 /// Normal route is the route that has a specific destination address,
 /// and it is used when there is a matching route for the destination address of a packet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum NetType {
+pub enum NetRouteType {
     Normal,
     Default,
 }
@@ -72,7 +72,7 @@ pub struct NetRoute {
     pub dst: Option<NetRouteAddr>,
     pub src: Option<NetRouteAddr>,
     pub gateway: Option<NetRouteAddr>,
-    pub ntype: NetType,
+    pub ntype: NetRouteType,
     pub family: NetFamily,
     #[cfg(any(
         target_os = "macos",
@@ -115,6 +115,15 @@ impl PartialEq for NetRoute {
     }
 }
 
+impl NetRoute {
+    pub fn dst_prefix(&self) -> Option<u128> {
+        match &self.dst {
+            Some(NetRouteAddr::IpPool(pool)) => Some(pool.prefix()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct RouteCache(Vec<NetRoute>);
 
@@ -134,17 +143,33 @@ impl fmt::Debug for RouteCache {
 }
 
 impl RouteCache {
+    /// Get the best route for the given destination address from the system route cache.
     pub fn search_route(&self, dst_addr: IpAddr) -> Option<NetRoute> {
+        let mut best_route: Option<NetRoute> = None;
         for route in &self.0 {
             match &route.dst {
                 Some(NetRouteAddr::IpPool(pool)) => {
                     if pool.contains(dst_addr) {
-                        return Some(route.clone());
+                        match &best_route {
+                            Some(b) => match b.dst_prefix() {
+                                Some(b_prefix) => {
+                                    if pool.prefix() > b_prefix {
+                                        best_route = Some(route.clone());
+                                    }
+                                }
+                                None => {
+                                    best_route = Some(route.clone());
+                                }
+                            },
+                            None => {
+                                best_route = Some(route.clone());
+                            }
+                        }
                     }
                 }
                 Some(NetRouteAddr::IpAddr(addr)) => {
                     if *addr == dst_addr {
-                        return Some(route.clone());
+                        best_route = Some(route.clone());
                     }
                 }
                 // The Mac address is not used for target route search.
@@ -153,17 +178,21 @@ impl RouteCache {
             }
         }
 
+        if best_route.is_some() {
+            return best_route;
+        }
+
         // no route found for the given destination address
         // now we use the default route if it exists
         for route in &self.0 {
             match dst_addr {
                 IpAddr::V4(_) => {
-                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv4 {
+                    if route.ntype == NetRouteType::Default && route.family == NetFamily::Ipv4 {
                         return Some(route.clone());
                     }
                 }
                 IpAddr::V6(_) => {
-                    if route.ntype == NetType::Default && route.family == NetFamily::Ipv6 {
+                    if route.ntype == NetRouteType::Default && route.family == NetFamily::Ipv6 {
                         return Some(route.clone());
                     }
                 }

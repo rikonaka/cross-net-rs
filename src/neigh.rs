@@ -101,6 +101,7 @@ impl fmt::Debug for NeighborCache {
 }
 
 impl NeighborCache {
+    /// Search for the MAC address of the given IP address in the system neighbor cache.
     pub fn search_mac(&self, ip: &IpAddr) -> Option<MacAddr> {
         self.0.get(ip).map(|mac_info| mac_info.mac)
     }

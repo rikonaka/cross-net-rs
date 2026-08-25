@@ -17,7 +17,7 @@ use crate::iface::MacAddr;
 use crate::iface::NetFamily;
 use crate::route::NetRoute;
 use crate::route::NetRouteAddr;
-use crate::route::NetType;
+use crate::route::NetRouteType;
 
 #[derive(Debug, Clone)]
 struct RouteEntry {
@@ -26,6 +26,7 @@ struct RouteEntry {
     gateway: Option<GatewayAddr>,
     netmask: Option<IpAddr>,
     ifname: Option<String>,
+    is_gateway: bool,
 }
 
 /// For MacOS, the gateway address can be an IP address or a MAC address.
@@ -255,12 +256,16 @@ fn list_routes() -> io::Result<Vec<RouteEntry>> {
         //     destination, src, gateway, netmask, ifname
         // );
 
+        let flags = rtm.rtm_flags as i32;
+        let is_gateway = (flags & libc::RTF_GATEWAY) != 0;
+
         routes.push(RouteEntry {
             destination,
             src,
             gateway,
             netmask,
             ifname,
+            is_gateway,
         });
 
         off += msglen;
@@ -283,10 +288,10 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
         };
         let (dst, family, ntype) = match r.destination {
             Some(dst) => {
-                let n = if dst.is_unspecified() {
-                    NetType::Default
+                let n = if dst.is_unspecified() && r.is_gateway {
+                    NetRouteType::Default
                 } else {
-                    NetType::Normal
+                    NetRouteType::Normal
                 };
                 match dst {
                     IpAddr::V4(ipv4) => {
@@ -331,7 +336,7 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
                     }
                 }
             }
-            None => (None, NetFamily::Ipv4, NetType::Normal),
+            None => (None, NetFamily::Ipv4, NetRouteType::Normal),
         };
         let gateway = match r.gateway {
             Some(g) => match g {
