@@ -14,7 +14,7 @@ use crate::error::CrossNetError;
 use crate::route::NetFamily;
 use crate::route::NetRoute;
 use crate::route::NetRouteAddr;
-use crate::route::NetType;
+use crate::route::NetRouteType;
 
 pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     let mut rets = Vec::new();
@@ -54,7 +54,7 @@ pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
                     dst: None,
                     src: None,
                     gateway,
-                    ntype: NetType::Default,
+                    ntype: NetRouteType::Default,
                     family,
                 };
                 rets.push(nr);
@@ -92,7 +92,7 @@ pub(crate) fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
                     dst,
                     src: None,
                     gateway,
-                    ntype: NetType::Normal,
+                    ntype: NetRouteType::Normal,
                     family,
                 };
                 rets.push(nr);

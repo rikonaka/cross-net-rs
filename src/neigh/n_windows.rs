@@ -33,9 +33,9 @@ pub(crate) fn get_net_ifs() -> Result<Vec<NetIf>, CrossNetError> {
         let first_row_ptr = table.Table.as_ptr();
         let rows = std::slice::from_raw_parts(first_row_ptr, num_entries);
         for row in rows {
-            let if_index = row.InterfaceIndex;
-            let if_name = utf16_array_to_string(&row.Alias);
-            let n = NetIf { if_name, if_index };
+            let ifindex = row.InterfaceIndex;
+            let ifname = utf16_array_to_string(&row.Alias);
+            let n = NetIf { ifname, ifindex };
             if !rets.contains(&n) {
                 rets.push(n);
             }

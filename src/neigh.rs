@@ -134,32 +134,46 @@ pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();
         for (ip, mac_info) in &neighbor_cache.0 {
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
-            let interface = match &mac_info.ifindex {
+            let ind = match &mac_info.ifindex {
                 Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
-            #[cfg(target_os = "macos")]
-            let interface = match &mac_info.ifname {
+            let name = match mac_info.interface_name() {
+                Ok(i) => match i {
+                    Some(n) => n,
+                    None => "N/A".to_string(),
+                },
+                Err(e) => e.to_string(),
+            };
+            println!(
+                "ip: {}, mac: {}, ind: {}, name: {}",
+                ip,
+                mac_info.mac.to_string(),
+                ind,
+                name
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_get_neighbor_cache() {
+        let neighbor_cache = get_neighbor_cache().unwrap();
+        for (ip, mac_info) in &neighbor_cache.0 {
+            let name = match &mac_info.ifname {
                 Some(iface) => iface.clone(),
                 None => "none".to_string(),
             };
             println!(
-                "IP: {}, MAC: {}, Interface: {}",
+                "ip: {}, mac: {}, name: {}",
                 ip,
                 mac_info.mac.to_string(),
-                interface
+                name
             );
-
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
-            let ind = mac_info.ifindex.clone().unwrap_or_default();
-            #[cfg(target_os = "macos")]
-            let ind = mac_info.ifname.clone().unwrap_or_default();
-            println!("Interface name for ind {}: {}", ind, interface);
         }
     }
 }

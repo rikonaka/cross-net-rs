@@ -85,15 +85,15 @@ pub struct NetRoute {
 
 impl fmt::Display for NetRoute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut output = String::new();
+        let mut output = Vec::new();
         if let Some(dst) = &self.dst {
-            output += &format!("dst: {}", dst);
+            output.push(format!("dst: {}", dst));
         }
         if let Some(src) = &self.src {
-            output += &format!(", src: {}", src);
+            output.push(format!("src: {}", src));
         }
         if let Some(gateway) = &self.gateway {
-            output += &format!(", gateway: {}", gateway);
+            output.push(format!("gateway: {}", gateway));
         }
         #[cfg(any(
             target_os = "macos",
@@ -102,8 +102,9 @@ impl fmt::Display for NetRoute {
             target_os = "netbsd"
         ))]
         if let Some(ifname) = &self.ifname {
-            output += &format!(", ifname: {}", ifname);
+            output.push(format!("ifname: {}", ifname));
         }
+        let output = output.join(", ");
         write!(f, "{}", output)?;
         Ok(())
     }
@@ -235,7 +236,7 @@ mod tests {
         for dst_addr in dst_addrs {
             let route = routes.search_route(dst_addr);
             match route {
-                Some(r) => println!("{:?}", r),
+                Some(r) => println!("{}", r),
                 None => {
                     println!("no route found for {}", dst_addr);
                 }
