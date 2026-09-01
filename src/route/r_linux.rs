@@ -15,7 +15,7 @@ use crate::error::CrossNetError;
 use crate::iface::NetFamily;
 use crate::route::NetRoute;
 use crate::route::NetRouteAddr;
-use crate::route::NetType;
+use crate::route::NetRouteType;
 
 async fn get_route_async() -> Result<Vec<NetRoute>, CrossNetError> {
     let (connection, handle, _r) = new_connection()?;
@@ -34,8 +34,8 @@ async fn get_route_async() -> Result<Vec<NetRoute>, CrossNetError> {
         }
 
         let ntype = match msg.header.destination_prefix_length {
-            0 => NetType::Default,
-            _ => NetType::Normal,
+            0 => NetRouteType::Default,
+            _ => NetRouteType::Normal,
         };
 
         let family = match msg.header.address_family {

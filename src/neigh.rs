@@ -19,10 +19,20 @@ use n_linux::get_net_ifs;
 #[cfg(target_os = "linux")]
 use n_linux::get_net_neighs;
 
-#[cfg(target_os = "macos")]
-pub mod n_macos;
-#[cfg(target_os = "macos")]
-use n_macos::get_net_neighs;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+pub mod n_bsd;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
+use n_bsd::get_net_neighs;
 
 #[derive(Debug, Clone)]
 pub struct NetIf {
@@ -159,7 +169,12 @@ mod tests {
             );
         }
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd"
+    ))]
     #[test]
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();

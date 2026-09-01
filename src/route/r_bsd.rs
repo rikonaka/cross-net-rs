@@ -362,12 +362,17 @@ pub fn get_net_routes() -> Result<Vec<NetRoute>, CrossNetError> {
     Ok(rets)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn test_macos() {
+    fn test_bsd() {
         let rets = get_net_routes().unwrap();
         println!("rets len: {:?}", rets.len());
         println!("=============================");

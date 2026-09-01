@@ -213,12 +213,17 @@ pub(crate) fn get_net_neighs() -> Result<Vec<MacosNetNeigh>, CrossNetError> {
     Ok(rets)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd"
+))]
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn test_macos() {
+    fn test_bsd() {
         let rets = get_net_neighs().unwrap();
         for ret in rets {
             println!("ip: {}, mac: {}", ret.ip.to_string(), ret.mac.to_string());
