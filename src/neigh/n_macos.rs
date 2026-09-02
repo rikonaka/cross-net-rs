@@ -213,12 +213,7 @@ pub(crate) fn get_net_neighs() -> Result<Vec<MacosNetNeigh>, CrossNetError> {
     Ok(rets)
 }
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
+#[cfg(target_os = "macos")]
 #[cfg(test)]
 mod tests {
     use super::*;

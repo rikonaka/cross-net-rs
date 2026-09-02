@@ -22,12 +22,7 @@ pub enum CrossNetError {
     #[error("linux ip pool error: {0}")]
     IpPoolError(#[from] subnetwork::SubnetworkError),
     /* r_unix */
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
+    #[cfg(target_os = "macos")]
     #[error("failed to parse integer: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
 }

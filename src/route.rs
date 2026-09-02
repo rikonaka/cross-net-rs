@@ -15,19 +15,9 @@ pub mod r_windows;
 #[cfg(target_os = "windows")]
 use r_windows::get_net_routes;
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
+#[cfg(target_os = "macos")]
 pub mod r_bsd;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
+#[cfg(target_os = "macos")]
 use r_bsd::get_net_routes;
 
 #[derive(Clone, Hash)]
@@ -84,12 +74,7 @@ pub struct NetRoute {
     pub gateway: Option<NetRouteAddr>,
     pub ntype: NetRouteType,
     pub family: NetFamily,
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
+    #[cfg(target_os = "macos")]
     pub ifname: Option<String>,
 }
 
@@ -105,12 +90,7 @@ impl fmt::Display for NetRoute {
         if let Some(gateway) = &self.gateway {
             output.push(format!("gateway: {}", gateway));
         }
-        #[cfg(any(
-            target_os = "macos",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        ))]
+        #[cfg(target_os = "macos")]
         if let Some(ifname) = &self.ifname {
             output.push(format!("ifname: {}", ifname));
         }

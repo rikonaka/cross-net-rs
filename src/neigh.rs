@@ -19,20 +19,10 @@ use n_linux::get_net_ifs;
 #[cfg(target_os = "linux")]
 use n_linux::get_net_neighs;
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-pub mod n_bsd;
-#[cfg(any(
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "openbsd",
-    target_os = "netbsd"
-))]
-use n_bsd::get_net_neighs;
+#[cfg(target_os = "macos")]
+pub mod n_macos;
+#[cfg(target_os = "macos")]
+use n_macos::get_net_neighs;
 
 #[derive(Debug, Clone)]
 pub struct NetIf {
@@ -53,12 +43,7 @@ pub struct MacInfo {
     /// On Linux and MacOS, this is usually interface name, on Windows, this is usually interface index.
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     ifindex: Option<u32>,
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
+    #[cfg(target_os = "macos")]
     ifname: Option<String>,
 }
 
@@ -88,12 +73,7 @@ impl fmt::Display for NeighborCache {
                 Some(iface) => iface.to_string(),
                 None => "N/A".to_string(),
             };
-            #[cfg(any(
-                target_os = "macos",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd"
-            ))]
+            #[cfg(target_os = "macos")]
             let iface_str = match &mac_info.ifname {
                 Some(iface) => iface.clone(),
                 None => "N/A".to_string(),
@@ -126,12 +106,7 @@ pub fn get_neighbor_cache() -> Result<NeighborCache, CrossNetError> {
             mac: n.mac,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             ifindex: Some(n.ifindex),
-            #[cfg(any(
-                target_os = "macos",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd"
-            ))]
+            #[cfg(target_os = "macos")]
             ifname: n.ifname,
         };
         rets.insert(n.ip, mac_info);
@@ -169,12 +144,7 @@ mod tests {
             );
         }
     }
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd"
-    ))]
+    #[cfg(target_os = "macos")]
     #[test]
     fn test_get_neighbor_cache() {
         let neighbor_cache = get_neighbor_cache().unwrap();
