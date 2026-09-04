@@ -16,9 +16,9 @@ pub mod r_windows;
 use r_windows::get_net_routes;
 
 #[cfg(target_os = "macos")]
-pub mod r_bsd;
+pub mod r_macos;
 #[cfg(target_os = "macos")]
-use r_bsd::get_net_routes;
+use r_macos::get_net_routes;
 
 #[derive(Clone, Hash)]
 pub enum NetRouteAddr {
